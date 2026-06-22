@@ -35,7 +35,7 @@ class ContextFlag(Flag):
 # ── 意图 → 所需 Context 映射表 ──
 # 每种意图类型对应一个 ContextFlag 组合
 INTENT_CONTEXT_MAP: dict[IntentType, ContextFlag] = {
-    IntentType.QA:            ContextFlag.CONVERSATION | ContextFlag.KNOWLEDGE,
+    IntentType.QA:            ContextFlag.CONVERSATION | ContextFlag.MEMORY | ContextFlag.KNOWLEDGE,
     IntentType.CODING:        (
         ContextFlag.IDENTITY | ContextFlag.CONVERSATION
         | ContextFlag.ENVIRONMENT | ContextFlag.MEMORY
@@ -47,14 +47,14 @@ INTENT_CONTEXT_MAP: dict[IntentType, ContextFlag] = {
         | ContextFlag.KNOWLEDGE | ContextFlag.TOOLS
     ),
     IntentType.PLANNING:      ContextFlag.CONVERSATION | ContextFlag.MEMORY | ContextFlag.KNOWLEDGE,
-    IntentType.SEARCH:        ContextFlag.KNOWLEDGE,
-    IntentType.WORKFLOW:      ContextFlag.CONVERSATION | ContextFlag.ENVIRONMENT | ContextFlag.TOOLS,
+    IntentType.SEARCH:        ContextFlag.MEMORY | ContextFlag.KNOWLEDGE,
+    IntentType.WORKFLOW:      ContextFlag.CONVERSATION | ContextFlag.MEMORY | ContextFlag.ENVIRONMENT | ContextFlag.TOOLS,
     IntentType.AGENT:         (
         ContextFlag.IDENTITY | ContextFlag.CONVERSATION
         | ContextFlag.ENVIRONMENT | ContextFlag.MEMORY
         | ContextFlag.KNOWLEDGE | ContextFlag.TOOLS
     ),
-    IntentType.DATA_ANALYSIS: ContextFlag.CONVERSATION | ContextFlag.ENVIRONMENT | ContextFlag.TOOLS,
+    IntentType.DATA_ANALYSIS: ContextFlag.CONVERSATION | ContextFlag.MEMORY | ContextFlag.ENVIRONMENT | ContextFlag.TOOLS,
 }
 
 

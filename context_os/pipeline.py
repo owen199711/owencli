@@ -187,46 +187,90 @@ class ContextOSPipeline:
 
         # 开启 Trace
         tracer_id = self.tracer.start(task_id="", raw_input=user_input)
-        logger.info("Pipeline run started: input='%s...'", user_input[:80])
+        logger.info("========== Pipeline start ==========")
+        logger.info("input: %s...", user_input[:120])
 
         pipeline_start = time.time()
 
         try:
             # ── Step 1: Intent Understanding ──
-            step = self.tracer.step_begin("intent_understanding")
+            self.tracer.step_begin("intent_understanding")
             t0 = time.time()
             task: TaskSpec = await self.task_parser.parse(user_input)
-            self.tracer.step_end(step, user_input, task.model_dump_json())
-            logger.info("Step 1 done: intent=%s, goal=%s", task.intent.value, task.goal.value)
+            logger.info(
+                "Step 1 (意图理解): ──────────────────────────────\n"
+                "  line: 解析用户输入 → TaskSpec\n"
+                "  input: %s...\n"
+                "  output: intent=%s, goal=%s, confidence=%.2f, entities=%d, tool_reqs=%d, knowledge_reqs=%d",
+                user_input[:80],
+                task.intent.value, task.goal.value, task.confidence,
+                len(task.entities), len(task.tool_requirements), len(task.knowledge_requirements),
+            )
 
             # ── Step 2: Context Building ──
-            step = self.tracer.step_begin("context_building")
+            self.tracer.step_begin("context_building")
             t0 = time.time()
             unified: UnifiedContext = await self.builder.build(task)
-            self.tracer.step_end(step, task.model_dump_json(), unified.model_dump_json())
-            logger.info("Step 2 done: memories=%d, knowledge=%d", len(unified.memory), len(unified.knowledge))
+            logger.info(
+                "Step 2 (上下文构建): ──────────────────────────\n"
+                "  line: 并行收集身份/对话/环境/记忆 → UnifiedContext\n"
+                "  input: task_id=%s\n"
+                "  output: identity=%s, conversation=%s, environment=%s, memory=%d, knowledge=%d",
+                task.id,
+                "yes" if unified.identity else "no",
+                f"{len(unified.conversation.history) if unified.conversation else 0}turns" if unified.conversation else "no",
+                "yes" if unified.environment else "no",
+                len(unified.memory), len(unified.knowledge),
+            )
 
             # ── Step 3: Context Optimization ──
-            step = self.tracer.step_begin("context_optimization")
+            self.tracer.step_begin("context_optimization")
             t0 = time.time()
             optimized: OptimizedContext = await self.optimizer.optimize(unified, task)
-            self.tracer.step_end(step, unified.model_dump_json(), optimized.model_dump_json())
-            logger.info("Step 3 done: compressed=%s, budget=%d", optimized.compressed, optimized.token_usage.total)
+            logger.info(
+                "Step 3 (上下文优化): ──────────────────────────\n"
+                "  line: 排序记忆 → 压缩对话 → 分配预算 → OptimizedContext\n"
+                "  input: memories=%d, knowledge=%d, conv_turns=%d\n"
+                "  output: compressed=%s, budget=%d, used=%d",
+                len(unified.memory), len(unified.knowledge),
+                len(unified.conversation.history) if unified.conversation else 0,
+                optimized.compressed,
+                optimized.token_usage.total,
+                optimized.token_usage.used or 0,
+            )
 
             # ── Step 4: Context Packaging ──
-            step = self.tracer.step_begin("context_packaging")
+            self.tracer.step_begin("context_packaging")
             t0 = time.time()
             packaged: PackagedContext = self.packager.pack(optimized, self.provider)
-            self.tracer.step_end(step, optimized.model_dump_json(), packaged.raw_prompt[:300])
-            logger.info("Step 4 done: prompt_len=%d chars", len(packaged.raw_prompt))
+            logger.info(
+                "Step 4 (Prompt 打包): ─────────────────────────\n"
+                "  line: 按 provider 格式拼接 sections → PackagedContext\n"
+                "  input: provider=%s, sections=%d\n"
+                "  output: prompt_len=%d chars, section_keys=%s",
+                self.provider.value,
+                len(unified.memory) + len(unified.knowledge),
+                len(packaged.raw_prompt),
+                list(packaged.sections.keys()),
+            )
 
             # ── Step 5: LLM Inference ──
-            step = self.tracer.step_begin("llm_inference")
+            s5 = self.tracer.step_begin("llm_inference")
             t0 = time.time()
             llm_response = await self.llm_client.complete(packaged.raw_prompt)
             llm_latency = (time.time() - t0) * 1000
-            self.tracer.step_end(step, packaged.raw_prompt[:200], str(llm_response)[:300])
-            logger.info("Step 5 done: latency=%.0fms", llm_latency)
+            self.tracer.step_end(s5, packaged.raw_prompt[:200], str(llm_response)[:300])
+            logger.info(
+                "Step 5 (LLM 推理): ────────────────────────────\n"
+                "  line: 调用 %s API\n"
+                "  input: %d chars → model=%s\n"
+                "  output: latency=%.0fms, response_len=%d chars",
+                type(self.llm_client).__name__,
+                len(packaged.raw_prompt),
+                getattr(self.llm_client, 'model', 'default'),
+                llm_latency,
+                len(str(llm_response)),
+            )
 
             # 记录 assistant 回复
             self.conversation.add_turn(role="assistant", content=str(llm_response)[:500])
@@ -255,8 +299,16 @@ class ContextOSPipeline:
 
             total_latency = (time.time() - pipeline_start) * 1000
             logger.info(
-                "Pipeline finished: success=%s, quality=%.3f, latency=%.0fms",
-                metrics.success, metrics.answer_quality, total_latency,
+                "Step 6 (反馈 & 记忆更新): ────────────────────\n"
+                "  line: 评估质量 → 写入 Working/LTM/Episodic/Semantic\n"
+                "  input: response=%s...\n"
+                "  output: quality=%.3f, cost=$%.5f, success=%s, reward=%.3f",
+                str(llm_response)[:80],
+                metrics.answer_quality, metrics.cost_usd, metrics.success, metrics.reward_score,
+            )
+            logger.info(
+                "========== Pipeline end: success=%s, total=%.0fms ==========",
+                metrics.success, total_latency,
             )
 
             return {

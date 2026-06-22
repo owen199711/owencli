@@ -1,8 +1,6 @@
-"""OpenAI JSON Prompt 适配器。"""
+"""OpenAI 兼容 Prompt 适配器（纯文本格式）。"""
 
 from __future__ import annotations
-
-import json
 
 from context_os.core.logger import get_logger
 from context_os.core.models import LLMProvider, OptimizedContext, PackagedContext
@@ -12,7 +10,11 @@ logger = get_logger(__name__)
 
 
 class OpenAIPromptAdapter(BasePromptAdapter):
-    """OpenAI 适配器 — messages 数组格式。"""
+    """OpenAI/DeepSeek 适配器 — 纯文本拼接格式。
+
+    生成可直接作为 user message 发送给 LLM 的纯文本 prompt，
+    与 BaseLLMClient.complete(prompt) 的调用方式匹配。
+    """
 
     provider = LLMProvider.OPENAI.value
 
@@ -20,57 +22,67 @@ class OpenAIPromptAdapter(BasePromptAdapter):
         sections: dict[str, str] = {}
         unified = ctx.context
 
-        # System message
-        system = "You are owencli, an intelligent AI assistant."
+        # ── System ──
+        system = (
+            "You are owencli, an intelligent AI assistant with access to "
+            "various tools and contextual information. Follow the user's "
+            "instructions carefully. Use the provided context to inform "
+            "your responses."
+        )
         sections["system"] = system
 
-        # Context sections
-        context_parts = []
-
+        # ── Identity ──
         if unified.identity:
-            context_parts.append(
+            sections["identity"] = (
                 f"[Identity] User: {unified.identity.user_id}, "
-                f"Role: {unified.identity.role}, Language: {unified.identity.language}"
+                f"Role: {unified.identity.role}, "
+                f"Language: {unified.identity.language}"
             )
 
+        # ── Memory ──
         if unified.memory:
-            context_parts.append("[Memory]")
+            mem_lines = ["[Memory]"]
             for item in unified.memory[:10]:
-                context_parts.append(f"  - [{item.type.value}] {item.content[:200]}")
+                mem_lines.append(f"  - [{item.type.value}] {item.content[:200]}")
+            sections["memory"] = "\n".join(mem_lines)
 
+        # ── Knowledge ──
         if unified.knowledge:
-            context_parts.append("[Knowledge]")
+            kn_lines = ["[Knowledge]"]
             for k in unified.knowledge[:5]:
-                context_parts.append(f"  - [{k.source}] {k.content[:200]}")
+                kn_lines.append(f"  - [{k.source}] {k.content[:200]}")
+            sections["knowledge"] = "\n".join(kn_lines)
 
+        # ── Environment ──
         if unified.environment:
-            context_parts.append(
+            sections["environment"] = (
                 f"[Environment] OS: {unified.environment.os}, "
                 f"CWD: {unified.environment.working_directory}"
             )
 
-        sections["context"] = "\n".join(context_parts)
-
-        # Conversation
-        conv_text = ""
+        # ── Conversation ──
         if unified.conversation and unified.conversation.history:
-            conv_lines = []
+            conv_lines = ["[Conversation]"]
             for turn in unified.conversation.history[-20:]:
-                conv_lines.append(f"{turn.role}: {turn.content}")
-            conv_text = "\n".join(conv_lines)
-            sections["conversation"] = conv_text
+                conv_lines.append(f"  {turn.role}: {turn.content}")
+            sections["conversation"] = "\n".join(conv_lines)
 
-        # Build messages
-        messages = [
-            {"role": "system", "content": system},
+        # ── 组装纯文本 prompt ──
+        section_order = [
+            "system", "identity", "environment",
+            "memory", "knowledge", "conversation",
         ]
-        if context_parts:
-            messages.append({"role": "system", "content": "\n".join(context_parts)})
-        if conv_text:
-            messages.append({"role": "user", "content": conv_text})
+        ordered = [sections[key] for key in section_order if key in sections]
+        raw_prompt = "\n\n".join(ordered)
 
-        raw_prompt = json.dumps(messages, ensure_ascii=False)
-        logger.debug("OpenAI prompt built: %d messages, %d chars", len(messages), len(raw_prompt))
+        # 在末尾添加"请回答"信号，明确指示 LLM 对最后一条 user 消息做出回应
+        if "conversation" in sections:
+            raw_prompt += "\n\nAssistant:"
+
+        logger.debug(
+            "OpenAI prompt built: %d sections, %d chars",
+            len(sections), len(raw_prompt),
+        )
 
         return PackagedContext(
             provider=LLMProvider.OPENAI,

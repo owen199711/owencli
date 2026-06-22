@@ -85,11 +85,9 @@ class ContextBuilder:
                 ContextFlag.ENVIRONMENT: self.environment,
             }
 
-            collect_tasks = []
-            for route in routes:
-                collector = collector_map.get(route.flag)
-                if collector:
-                    collect_tasks.append(collector.collect())
+            # 按顺序收集：只含有 collector 的 route + 可选的 memory_task
+            active_routes = [r for r in routes if r.flag in collector_map]
+            collect_tasks = [collector_map[r.flag].collect() for r in active_routes]
 
             # 记忆检索
             memory_task = None
@@ -102,21 +100,27 @@ class ContextBuilder:
             if collect_tasks:
                 results = await asyncio.gather(*collect_tasks, return_exceptions=True)
 
-                # 处理收集结果
-                result_idx = 0
-                for route in routes:
-                    collector = collector_map.get(route.flag)
-                    if collector and result_idx < len(results):
-                        result = results[result_idx]
-                        if isinstance(result, Exception):
-                            logger.warning("Collector %s failed: %s", type(collector).__name__, result)
-                        elif isinstance(result, UnifiedContext):
-                            ctx = self.merger.merge([ctx, result])
-                        result_idx += 1
+                # 处理 collector 结果：按 flag 类型赋值到对应字段
+                for idx, route in enumerate(active_routes):
+                    if idx >= len(results):
+                        break
+                    result = results[idx]
+                    if isinstance(result, Exception):
+                        logger.warning(
+                            "Collector %s failed: %s",
+                            type(collector_map[route.flag]).__name__, result,
+                        )
+                        continue
+                    if route.flag == ContextFlag.IDENTITY and result:
+                        ctx.identity = result
+                    elif route.flag == ContextFlag.CONVERSATION and result:
+                        ctx.conversation = result
+                    elif route.flag == ContextFlag.ENVIRONMENT and result:
+                        ctx.environment = result
 
-                # 处理记忆检索结果
-                if memory_task and result_idx < len(results):
-                    result = results[result_idx]
+                # 处理记忆检索结果（最后一个 task）
+                if memory_task:
+                    result = results[-1]
                     if isinstance(result, list):
                         ctx.memory = result
                         logger.debug("Retrieved %d memory items", len(result))

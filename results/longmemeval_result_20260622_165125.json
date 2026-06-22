@@ -1,0 +1,61 @@
+{
+  "dataset": "longmemeval_oracle",
+  "num_instances": 3,
+  "duration_minutes": 7.7,
+  "llm": "DeepSeekClient",
+  "by_type": {
+    "temporal-reasoning": {
+      "count": 3,
+      "acc_simple": 0.0,
+      "acc_memory": 1.0,
+      "f1_simple": 0.0,
+      "f1_memory": 0.833
+    }
+  },
+  "overall": {
+    "acc_simple": 0.0,
+    "acc_memory": 1.0,
+    "f1_simple": 0.0,
+    "f1_memory": 0.833,
+    "delta_acc": 1.0,
+    "delta_f1": 0.833
+  },
+  "details": [
+    {
+      "question_id": "gpt4_2655b836",
+      "question_type": "temporal-reasoning",
+      "question": "What was the first issue I had with my new car after its first service?",
+      "answer": "GPS system not functioning correctly",
+      "hypothesis_simple": "",
+      "hypothesis_memory": "Based on your records, the first issue you had with your new car (your silver Honda Civic, purchased on February 10th) after its first service on **March 15th** was a **problem with the GPS system**. ",
+      "score_a": 0.0,
+      "score_b": 0.5,
+      "correct_a": false,
+      "correct_b": true
+    },
+    {
+      "question_id": "gpt4_2487a7cb",
+      "question_type": "temporal-reasoning",
+      "question": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using",
+      "answer": "'Data Analysis using Python' webinar",
+      "hypothesis_simple": "",
+      "hypothesis_memory": "Based on the information from our conversation, you attended the **\"Effective Time Management\" workshop** first (last Saturday), and then the **\"Data Analysis using Python\" webinar** two months ago. S",
+      "score_a": 0.0,
+      "score_b": 1.0,
+      "correct_a": false,
+      "correct_b": true
+    },
+    {
+      "question_id": "gpt4_76048e76",
+      "question_type": "temporal-reasoning",
+      "question": "Which vehicle did I take care of first in February, the bike or the car?",
+      "answer": "bike",
+      "hypothesis_simple": "",
+      "hypothesis_memory": "Based on our conversation, you took care of your **bike** first in February.\n\nYou mentioned that you got your bike repaired in **mid-February** (fixing the gears), and you washed your current Corolla ",
+      "score_a": 0.0,
+      "score_b": 1.0,
+      "correct_a": false,
+      "correct_b": true
+    }
+  ]
+}

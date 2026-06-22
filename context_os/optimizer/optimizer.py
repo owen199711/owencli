@@ -65,10 +65,8 @@ class ContextOptimizer:
                 context.conversation.history,
                 max_tokens=2000,
             )
-            # 将压缩后的文本存回 metadata
-            if not context.conversation.metadata:
-                context.conversation.metadata = {}
-            context.conversation.metadata["compressed"] = compressed
+            # 将压缩后的文本存回 current_topic 字段（复用现有字段）
+            context.conversation.current_topic = compressed if isinstance(compressed, str) else None
 
         # Step 3: 分配 Token 预算
         token_budget = self.budget.allocate()

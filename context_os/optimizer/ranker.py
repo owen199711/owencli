@@ -48,7 +48,8 @@ class RelevanceRanker:
         if not items:
             return []
 
-        now = datetime.now(timezone.utc)
+        # 统一为 offset-naive UTC，与 SQLite 存储的 timestamp 保持一致
+        now = datetime.utcnow()
 
         for item in items:
             # 1. 语义相似度
@@ -57,7 +58,11 @@ class RelevanceRanker:
                 semantic_score = self._cosine_similarity(query_embedding, item.embedding)
 
             # 2. 时间衰减（越近的越高）
-            age_seconds = (now - item.timestamp).total_seconds()
+            # 防御性处理：若 timestamp 带 tz，先剥离
+            ts = item.timestamp
+            if ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
+            age_seconds = (now - ts).total_seconds()
             age_hours = age_seconds / 3600
             time_score = float(np.exp(-age_hours / self.time_decay_hours))
 

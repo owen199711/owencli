@@ -1,0 +1,61 @@
+{
+  "dataset": "longmemeval_oracle",
+  "num_instances": 3,
+  "duration_minutes": 7.8,
+  "llm": "DeepSeekClient",
+  "by_type": {
+    "temporal-reasoning": {
+      "count": 3,
+      "acc_simple": 0.0,
+      "acc_memory": 0.667,
+      "f1_simple": 0.0,
+      "f1_memory": 0.5
+    }
+  },
+  "overall": {
+    "acc_simple": 0.0,
+    "acc_memory": 0.667,
+    "f1_simple": 0.0,
+    "f1_memory": 0.5,
+    "delta_acc": 0.667,
+    "delta_f1": 0.5
+  },
+  "details": [
+    {
+      "question_id": "gpt4_2655b836",
+      "question_type": "temporal-reasoning",
+      "question": "What was the first issue I had with my new car after its first service?",
+      "answer": "GPS system not functioning correctly",
+      "hypothesis_simple": "",
+      "hypothesis_memory": "Based on your memory records, the first issue you had with your new car (your silver Honda Civic, purchased on February 10th) after its first service was **a problem with the GPS/navigation system**.\n",
+      "score_a": 0.0,
+      "score_b": 0.5,
+      "correct_a": false,
+      "correct_b": true
+    },
+    {
+      "question_id": "gpt4_2487a7cb",
+      "question_type": "temporal-reasoning",
+      "question": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using",
+      "answer": "'Data Analysis using Python' webinar",
+      "hypothesis_simple": "",
+      "hypothesis_memory": "Based on the information in our conversation, you attended the **\"Effective Time Management\" workshop first**. You mentioned attending that workshop \"last Saturday,\" while the \"Data Analysis using Pyt",
+      "score_a": 0.0,
+      "score_b": 1.0,
+      "correct_a": false,
+      "correct_b": true
+    },
+    {
+      "question_id": "gpt4_76048e76",
+      "question_type": "temporal-reasoning",
+      "question": "Which vehicle did I take care of first in February, the bike or the car?",
+      "answer": "bike",
+      "hypothesis_simple": "",
+      "hypothesis_memory": "您好！我是owencli，一个智能AI助手。请问有什么可以帮您的吗？如果您有具体问题或需要协助，请随时告诉我，我会结合可用的工具和上下文信息为您提供支持。",
+      "score_a": 0.0,
+      "score_b": 0.0,
+      "correct_a": false,
+      "correct_b": false
+    }
+  ]
+}

@@ -90,6 +90,9 @@ class ClaudePromptAdapter(BasePromptAdapter):
                 ordered.append(sections[key])
 
         raw = "\n\n".join(ordered)
+        # 在末尾添加请回答信号
+        if "conversation" in sections:
+            raw += "\n\nAssistant:"
         logger.debug(
             "Claude prompt built: %d sections, %d chars",
             len(sections), len(raw),

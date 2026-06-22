@@ -1,0 +1,61 @@
+{
+  "dataset": "longmemeval_oracle",
+  "num_instances": 3,
+  "duration_minutes": 5.7,
+  "llm": "DeepSeekClient",
+  "by_type": {
+    "temporal-reasoning": {
+      "count": 3,
+      "acc_simple": 0.0,
+      "acc_memory": 1.0,
+      "f1_simple": 0.0,
+      "f1_memory": 0.833
+    }
+  },
+  "overall": {
+    "acc_simple": 0.0,
+    "acc_memory": 1.0,
+    "f1_simple": 0.0,
+    "f1_memory": 0.833,
+    "delta_acc": 1.0,
+    "delta_f1": 0.833
+  },
+  "details": [
+    {
+      "question_id": "gpt4_2655b836",
+      "question_type": "temporal-reasoning",
+      "question": "What was the first issue I had with my new car after its first service?",
+      "answer": "GPS system not functioning correctly",
+      "hypothesis_simple": "",
+      "hypothesis_memory": "Based on the conversation, the first issue you had with your new car after its first service was with the **GPS system**. You mentioned that you had an issue with it on **3/22** and had to take the ca",
+      "score_a": 0.0,
+      "score_b": 0.5,
+      "correct_a": false,
+      "correct_b": true
+    },
+    {
+      "question_id": "gpt4_2487a7cb",
+      "question_type": "temporal-reasoning",
+      "question": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using",
+      "answer": "'Data Analysis using Python' webinar",
+      "hypothesis_simple": "",
+      "hypothesis_memory": "Based on our conversation, you attended the **'Data Analysis using Python' webinar first**, as it took place \"two months ago,\" while the **'Effective Time Management' workshop** occurred \"last Saturda",
+      "score_a": 0.0,
+      "score_b": 1.0,
+      "correct_a": false,
+      "correct_b": true
+    },
+    {
+      "question_id": "gpt4_76048e76",
+      "question_type": "temporal-reasoning",
+      "question": "Which vehicle did I take care of first in February, the bike or the car?",
+      "answer": "bike",
+      "hypothesis_simple": "",
+      "hypothesis_memory": "Based on the conversation history, you took care of the **bike** first in February. You mentioned that in mid-February, you had to take your bike in for repairs because the gears were acting up. The c",
+      "score_a": 0.0,
+      "score_b": 1.0,
+      "correct_a": false,
+      "correct_b": true
+    }
+  ]
+}
