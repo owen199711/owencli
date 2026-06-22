@@ -4,14 +4,16 @@
     python examples/basic_pipeline.py
 
 需要:
-    1. 设置 ANTHROPIC_API_KEY 或 OPENAI_API_KEY 环境变量
-    2. （可选）设置 DATABASE_URL 环境变量指向 PostgreSQL
+    1. 设置 DEEPSEEK_API_KEY 环境变量（或 ANTHROPIC_API_KEY / OPENAI_API_KEY）
+    2. （可选）设置 DATABASE_URL 环境变量指向 SQLite 数据库路径
+    3. 切换 LLM: $env:LLM_PROVIDER='anthropic' | 'openai' | 'deepseek'
 """
 
 import asyncio
 import os
 
 from context_os.core.models import LLMProvider
+from context_os.llm.deepseek_client import DeepSeekClient
 from context_os.llm.anthropic_client import AnthropicClient
 from context_os.llm.openai_client import OpenAIClient
 from context_os.pipeline import ContextOSPipeline
@@ -20,23 +22,27 @@ from context_os.pipeline import ContextOSPipeline
 async def main():
     """演示 Context-OS Pipeline 的基本使用。"""
 
-    # ── 初始化 LLM Client ──
-    provider = os.environ.get("LLM_PROVIDER", "anthropic").lower()
+    # ── 初始化 LLM Client（默认使用 DeepSeek）──
+    provider = os.environ.get("LLM_PROVIDER", "deepseek").lower()
 
-    if provider == "openai":
+    if provider == "anthropic":
+        llm = AnthropicClient()
+        llm_provider = LLMProvider.CLAUDE
+        print("Using Anthropic:", llm.model)
+    elif provider == "openai":
         llm = OpenAIClient()
         llm_provider = LLMProvider.OPENAI
         print("Using OpenAI:", llm.model)
     else:
-        llm = AnthropicClient()
-        llm_provider = LLMProvider.CLAUDE
-        print("Using Anthropic:", llm.model)
+        llm = DeepSeekClient()
+        llm_provider = LLMProvider.DEEPSEEK
+        print("Using DeepSeek:", llm.model)
 
     # ── 初始化 Pipeline ──
     async with ContextOSPipeline(
         llm_client=llm,
         provider=llm_provider,
-        pg_dsn=os.environ.get("DATABASE_URL"),
+        db_path=os.environ.get("DATABASE_URL"),
         user_id="demo-user",
     ) as pipeline:
 

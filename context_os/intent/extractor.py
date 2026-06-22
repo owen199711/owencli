@@ -161,7 +161,8 @@ class EntityExtractor:
             entities: 结果追加到该列表中。
         """
         # 提取引号中的内容作为通用实体
-        quoted = re.findall(r"["'`]([\w./\\-]+)["'`]", user_input)
+        # 用 triple-quote 避免内部双引号冲突
+        quoted = re.findall(r"""["'`]([\w./\\-]+)["'`]""", user_input)
         for q in quoted:
             # 避免重复
             if not any(e.value == q for e in entities):

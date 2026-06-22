@@ -49,9 +49,13 @@ class AdapterRegistry:
         return adapter
 
     def register_defaults(self) -> None:
-        """注册默认适配器（Claude + OpenAI）。"""
+        """注册默认适配器（Claude + OpenAI + DeepSeek）。"""
         self.register(ClaudePromptAdapter())
         self.register(OpenAIPromptAdapter())
+        # DeepSeek 使用 OpenAI 兼容接口，复用 OpenAI 适配器
+        deepseek_adapter = OpenAIPromptAdapter()
+        deepseek_adapter.provider = LLMProvider.DEEPSEEK.value
+        self.register(deepseek_adapter)
         logger.info("Default adapters registered: %s", list(self._adapters.keys()))
 
     @property

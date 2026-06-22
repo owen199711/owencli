@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from context_os.core.logger import get_logger
-from context_os.core.memory.store import PostgresStore
+from context_os.memory.store import SQLiteStore
 from context_os.core.models import MemoryItem, MemoryType
 
 logger = get_logger(__name__)
@@ -37,7 +37,7 @@ class ShortTermMemory:
     def __init__(
         self,
         session_id: str,
-        store: PostgresStore,
+        store: SQLiteStore,
         ttl_hours: int = 24,
     ):
         self.session_id = session_id

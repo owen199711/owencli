@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from context_os.core.logger import get_logger
-from context_os.core.memory.store import PostgresStore
+from context_os.memory.store import SQLiteStore
 from context_os.core.models import MemoryItem, MemoryType
 
 logger = get_logger(__name__)
@@ -26,7 +26,7 @@ class EpisodicMemory:
         user_id: 默认用户 ID。
     """
 
-    def __init__(self, store: PostgresStore, user_id: str = "anonymous"):
+    def __init__(self, store: SQLiteStore, user_id: str = "anonymous"):
         self.store = store
         self.user_id = user_id
         logger.info("EpisodicMemory initialized")
@@ -203,15 +203,15 @@ class EpisodicMemory:
         Returns:
             是否更新成功。
         """
-        if not self.store._pool:
+        if not self.store._conn:
             return False
 
-        async with self.store._pool.acquire() as conn:
-            result = await conn.execute(
-                "UPDATE episodes SET feedback = $1 WHERE id = $2",
-                feedback, episode_id,
-            )
-            success = result != "UPDATE 0"
-            if success:
-                logger.info("Episode feedback updated: id=%s, feedback='%s'", episode_id, feedback[:50])
-            return success
+        cursor = await self.store._conn.execute(
+            "UPDATE episodes SET feedback = ? WHERE id = ?",
+            (feedback, episode_id),
+        )
+        await self.store._conn.commit()
+        success = cursor.rowcount > 0
+        if success:
+            logger.info("Episode feedback updated: id=%s, feedback='%s'", episode_id, feedback[:50])
+        return success

@@ -21,7 +21,7 @@ class TestContextCompressor:
     def test_count_tokens_english(self, compressor):
         """英文 Token 估算。"""
         tokens = compressor.count_tokens("hello world")
-        assert tokens == 4  # 11个字符 * 0.25 + 1
+        assert tokens == 3  # int(11 * 0.25) + 1 = 3
 
     @pytest.mark.asyncio
     async def test_compress_conversation_below_limit(self, compressor):

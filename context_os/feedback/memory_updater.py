@@ -71,7 +71,7 @@ class MemoryUpdater:
 
         # 3. 长期记忆：高质量回答才存储
         if metrics.reward_score >= 0.7:
-            await self.ltm.store(
+            await self.ltm.save(
                 content=f"Task: {task.raw_input}\nResolution: {response[:500]}",
                 memory_type="long_term",
                 metadata={

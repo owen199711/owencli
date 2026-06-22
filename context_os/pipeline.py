@@ -33,7 +33,7 @@ from context_os.memory.episodic import EpisodicMemory
 from context_os.memory.long_term import LongTermMemory
 from context_os.memory.semantic import SemanticMemory
 from context_os.memory.short_term import ShortTermMemory
-from context_os.memory.store import PostgresStore
+from context_os.memory.store import SQLiteStore
 from context_os.memory.working import WorkingMemory
 from context_os.optimizer.budget import TokenBudgetAllocator
 from context_os.optimizer.compressor import ContextCompressor
@@ -58,7 +58,7 @@ class ContextOSPipeline:
         self,
         llm_client: BaseLLMClient,
         provider: LLMProvider = LLMProvider.CLAUDE,
-        pg_dsn: Optional[str] = None,
+        db_path: Optional[str] = None,
         session_id: Optional[str] = None,
         user_id: str = "anonymous",
     ):
@@ -67,7 +67,7 @@ class ContextOSPipeline:
         Args:
             llm_client: LLM 客户端。
             provider: LLM 提供商。
-            pg_dsn: PostgreSQL 连接字符串。
+            db_path: SQLite 数据库文件路径。默认从 DATABASE_URL 环境变量读取。
             session_id: Session ID（自动生成）。
             user_id: 用户 ID。
         """
@@ -77,7 +77,7 @@ class ContextOSPipeline:
         self.provider = provider
 
         # ── 存储层 ──
-        self.store = PostgresStore(dsn=pg_dsn)
+        self.store = SQLiteStore(db_path=db_path)
         self._store_connected = False
 
         # ── Intent ──
@@ -157,7 +157,7 @@ class ContextOSPipeline:
         )
 
     async def _ensure_store(self) -> None:
-        """确保 PostgreSQL 已连接（懒连接）。"""
+        """确保 SQLite 已连接（懒连接）。"""
         if not self._store_connected:
             await self.store.connect()
             self._store_connected = True

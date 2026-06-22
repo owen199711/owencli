@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from context_os.core.logger import get_logger
-from context_os.core.memory.store import PostgresStore
+from context_os.memory.store import SQLiteStore
 
 logger = get_logger(__name__)
 
@@ -27,7 +27,7 @@ class SemanticMemory:
         user_id: 默认用户 ID。
     """
 
-    def __init__(self, store: PostgresStore, user_id: str = "anonymous"):
+    def __init__(self, store: SQLiteStore, user_id: str = "anonymous"):
         self.store = store
         self.user_id = user_id
         logger.info("SemanticMemory initialized")
@@ -73,14 +73,14 @@ class SemanticMemory:
         Returns:
             概念字典或 None。
         """
-        if not self.store._pool:
+        if not self.store._conn:
             return None
 
-        async with self.store._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM concepts WHERE name = $1", name,
-            )
-            return dict(row) if row else None
+        cursor = await self.store._conn.execute(
+            "SELECT * FROM concepts WHERE name = ?", (name,),
+        )
+        row = await cursor.fetchone()
+        return self.store._row_to_dict(row) if row else None
 
     # ── 关系管理 ────────────────────────────────────────────────
 
@@ -174,43 +174,41 @@ class SemanticMemory:
         Returns:
             路径上的节点和关系序列。
         """
-        if not self.store._pool:
+        if not self.store._conn:
             return []
 
-        async with self.store._pool.acquire() as conn:
-            # BFS 搜索
-            visited = {source}
-            queue: list[list[dict]] = [[{"type": "concept", "name": source}]]
+        # BFS 搜索
+        visited = {source}
+        queue: list[list[dict]] = [[{"type": "concept", "name": source}]]
 
-            while queue:
-                path = queue.pop(0)
-                last_node = path[-1]["name"]
+        while queue:
+            path = queue.pop(0)
+            last_node = path[-1]["name"]
 
-                if last_node == target:
-                    logger.info("Shortest path found: %s -> %s, length=%d", source, target, len(path))
-                    return path
+            if last_node == target:
+                logger.info("Shortest path found: %s -> %s, length=%d", source, target, len(path))
+                return path
 
-                # 查询从 last_node 出发的所有关系
-                rows = await conn.fetch(
-                    """
-                    SELECT cr.relation_type, c.name AS neighbor, c.id
-                    FROM concept_relations cr
-                    JOIN concepts cs ON cr.source_id = cs.id
-                    JOIN concepts ct ON cr.target_id = ct.id
-                    WHERE cs.name = $1
-                    """,
-                    last_node,
-                )
+            # 查询从 last_node 出发的所有关系
+            cursor = await self.store._conn.execute(
+                "SELECT cr.relation_type, c.name AS neighbor, c.id "
+                "FROM concept_relations cr "
+                "JOIN concepts cs ON cr.source_id = cs.id "
+                "JOIN concepts ct ON cr.target_id = ct.id "
+                "WHERE cs.name = ?",
+                (last_node,),
+            )
+            rows = await cursor.fetchall()
 
-                for r in rows:
-                    neighbor = r["neighbor"]
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        new_path = path + [
-                            {"type": "relation", "type_name": r["relation_type"]},
-                            {"type": "concept", "name": neighbor},
-                        ]
-                        queue.append(new_path)
+            for r in rows:
+                neighbor = r["neighbor"]
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    new_path = path + [
+                        {"type": "relation", "type_name": r["relation_type"]},
+                        {"type": "concept", "name": neighbor},
+                    ]
+                    queue.append(new_path)
 
         logger.debug("No path found: %s -> %s", source, target)
         return []

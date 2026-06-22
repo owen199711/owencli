@@ -1,7 +1,7 @@
 """长期记忆（Long-Term Memory）。
 
-跨 Session、跨项目的持久记忆。基于 PostgreSQL 存储，支持:
-    - 向量相似度检索（需 pgvector 插件）
+跨 Session、跨项目的持久记忆。基于 SQLite 存储，支持:
+    - 向量相似度检索（需 sqlite3 插件）
     - 时间衰减排序
     - 访问频率加权
     - Ebbinghaus 遗忘曲线自动清理
@@ -19,7 +19,7 @@ import uuid
 from typing import Any, Optional
 
 from context_os.core.logger import get_logger
-from context_os.core.memory.store import PostgresStore
+from context_os.memory.store import SQLiteStore
 from context_os.core.models import MemoryItem, MemoryType
 
 logger = get_logger(__name__)
@@ -29,16 +29,16 @@ class LongTermMemory:
     """长期记忆 — 跨 Session 持久知识库。
 
     Args:
-        store: PostgreSQL 存储层实例。
+        store: SQLite 存储层实例。
         user_id: 默认用户 ID。
     """
 
-    def __init__(self, store: PostgresStore, user_id: str = "anonymous"):
+    def __init__(self, store: SQLiteStore, user_id: str = "anonymous"):
         self.store = store
         self.user_id = user_id
         logger.info("LongTermMemory initialized (user=%s)", user_id)
 
-    async def store(
+    async def save(
         self,
         content: str,
         memory_type: str = "long_term",
@@ -68,7 +68,7 @@ class LongTermMemory:
             metadata=metadata,
         )
         logger.info(
-            "LTM stored: id=%s, type=%s, content_len=%d",
+            "LTM saved: id=%s, type=%s, content_len=%d",
             mem_id, memory_type, len(content),
         )
         return mem_id
@@ -147,11 +147,11 @@ class LongTermMemory:
         mem = await self.store.get_memory(memory_id)
         if mem:
             new_score = (mem.get("relevance_score") or 0.0) + delta
-            async with self.store._pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE memories SET relevance_score = $1 WHERE id = $2",
-                    min(new_score, 1.0), memory_id,
-                )
+            await self.store._conn.execute(
+                "UPDATE memories SET relevance_score = ? WHERE id = ?",
+                (min(new_score, 1.0), memory_id),
+            )
+            await self.store._conn.commit()
             logger.debug("LTM relevance updated: id=%s, new_score=%.2f", memory_id, new_score)
 
     async def consolidate(self) -> int:
@@ -211,21 +211,19 @@ class LongTermMemory:
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=threshold_days)
 
-        if not self.store._pool:
+        if not self.store._conn:
             return 0
 
-        async with self.store._pool.acquire() as conn:
-            result = await conn.execute(
-                """
-                DELETE FROM memories
-                WHERE type = 'long_term'
-                  AND timestamp < $1
-                  AND access_count < $2
-                  AND relevance_score < 0.3
-                """,
-                cutoff, min_access_count,
-            )
-            count = int(result.split()[-1]) if result else 0
+        cursor = await self.store._conn.execute(
+            "DELETE FROM memories "
+            "WHERE type = 'long_term' "
+            "AND timestamp < ? "
+            "AND access_count < ? "
+            "AND relevance_score < 0.3",
+            (cutoff.isoformat(), min_access_count),
+        )
+        await self.store._conn.commit()
+        count = cursor.rowcount
 
         if count > 0:
             logger.info("LTM forget: removed %d low-value memories", count)
