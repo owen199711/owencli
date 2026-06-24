@@ -9,6 +9,7 @@ import com.owencli.contextos.memory.*;
 import com.owencli.contextos.orchestrator.ContextFlag;
 import com.owencli.contextos.orchestrator.ContextRouter;
 import com.owencli.contextos.orchestrator.ContextSelector;
+import com.owencli.contextos.policy.ContextPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,7 +71,26 @@ public class ContextBuilder {
         log.info("ContextBuilder initialized with RetrievalPlanner and MemoryManager");
     }
 
+    /**
+     * Build context without a policy directive (uses defaults).
+     * Delegates to {@link #build(TaskSpec, ContextPolicy.RetrievalDirective)} with null directive.
+     */
     public CompletableFuture<UnifiedContext> build(TaskSpec task) {
+        return build(task, null);
+    }
+
+    /**
+     * Build unified context with policy-aware filtering.
+     * <p>
+     * The {@code directive} is applied to filter facts and memories by relevance score,
+     * skip knowledge/tools when configured, and prevent injection of irrelevant personal
+     * data (L1 intent-level filtering).
+     *
+     * @param task      the parsed task specification
+     * @param directive policy directive from {@link ContextPolicy#evaluate(TaskSpec)},
+     *                  may be null (falls back to defaults)
+     */
+    public CompletableFuture<UnifiedContext> build(TaskSpec task, ContextPolicy.RetrievalDirective directive) {
         try {
             var flags = selector.select(task);
             var routes = router.route(task, flags);
@@ -79,6 +99,10 @@ public class ContextBuilder {
             // Plan retrieval strategy based on task intent
             var plan = planner.plan(task);
             log.info("Retrieval plan for {}: {}", task.getIntent().getValue(), plan);
+
+            double minRelevanceScore = (directive != null) ? directive.getMinRelevanceScore() : 0.0;
+            boolean skipKnowledge = directive != null && directive.isSkipKnowledge();
+            boolean skipTools = directive != null && directive.isSkipTools();
 
             Map<ContextFlag, Object> collectorMap = Map.of(
                     ContextFlag.IDENTITY, identity,
@@ -100,10 +124,11 @@ public class ContextBuilder {
                     })
                     .toList();
 
-            // ── 2. Start multi-source retrieval (parallel) ──
-            // 2a. Long-term Memory
-            CompletableFuture<List<MemoryItem>> ltmFuture = flags.contains(ContextFlag.MEMORY)
-                    ? memoryManager.getLongTerm().retrieve(task.getRawInput(), plan.getMemoryTopK(), null, null)
+            // ── 2. Multi-source retrieval via LongTermIndex ──
+            // 2a. LongTermIndex (LTM + Episodic + Semantic global vector search)
+            CompletableFuture<List<MemoryItem>> indexFuture = flags.contains(ContextFlag.MEMORY)
+                    ? memoryManager.getIndex().query(task.getRawInput(), plan.getMemoryTopK())
+                    .thenApply(LongTermIndex.IndexResult::items)
                     : CompletableFuture.completedFuture(List.of());
 
             // 2b. Conversation Memory (session history)
@@ -111,39 +136,15 @@ public class ContextBuilder {
                     ? memoryManager.getConversation().retrieve(task.getRawInput(), plan.getConversationTopK())
                     : CompletableFuture.completedFuture(List.of());
 
-            // 2c. Episodic Memory — similar past experiences
-            CompletableFuture<List<MemoryItem>> epFuture = flags.contains(ContextFlag.MEMORY)
-                    ? memoryManager.getEpisodic().recallSimilar(task.getRawInput(), plan.getEpisodeTopK())
-                    : CompletableFuture.completedFuture(List.of());
-
-            // 2d. Reflection Memory — past lessons
-            CompletableFuture<List<MemoryItem>> refFuture = flags.contains(ContextFlag.MEMORY)
-                    ? memoryManager.getReflection().retrieve(task.getRawInput(), plan.getReflectionTopK())
-                    : CompletableFuture.completedFuture(List.of());
-
-            // 2e. Semantic Memory — knowledge graph queries
-            CompletableFuture<List<KnowledgeChunk>> semFuture = flags.contains(ContextFlag.KNOWLEDGE)
-                    ? retrieveSemanticKnowledge(task, plan.getKnowledgeTopK())
-                    : CompletableFuture.completedFuture(List.of());
-
-            // 2f. Procedural Memory — learned procedures
-            CompletableFuture<List<MemoryItem>> procFuture = flags.contains(ContextFlag.MEMORY)
-                    ? memoryManager.getProcedural().retrieve(task.getRawInput(), task.getDomain(), plan.getToolTopK())
-                    : CompletableFuture.completedFuture(List.of());
-
-            // 2g. Fact Memory — structured user facts (always retrieved for personalization)
+            // 2g. Fact Memory — structured user facts (now intent-aware via FactMemory.retrieve)
             CompletableFuture<List<FactRecord>> factFuture = memoryManager.getFact()
                     .retrieve(task.getRawInput(), plan.getMemoryTopK());
 
             // ── 3. Merge all async results ──
             var allFutures = new ArrayList<CompletableFuture<?>>();
             allFutures.addAll(collectorFutures);
-            allFutures.add(ltmFuture);
+            allFutures.add(indexFuture);
             allFutures.add(convFuture);
-            allFutures.add(epFuture);
-            allFutures.add(refFuture);
-            allFutures.add(semFuture);
-            allFutures.add(procFuture);
             allFutures.add(factFuture);
 
             return CompletableFuture.allOf(allFutures.toArray(new CompletableFuture<?>[0]))
@@ -168,39 +169,31 @@ public class ContextBuilder {
                             }
                         }
 
-                        // ── Fusion: merge all memory sources ──
+                        // ── Fusion: index results + conversation + facts ──
                         var allMemory = new ArrayList<MemoryItem>();
                         try {
-                            var ltmItems = ltmFuture.get();
-                            ltmItems.forEach(i -> i.setRelevanceScore(i.getRelevanceScore() * 0.9));
-                            allMemory.addAll(ltmItems);
-                        } catch (Exception e) { log.warn("LTM retrieve failed", e); }
+                            var idxItems = indexFuture.get();
+                            if (!skipKnowledge) {
+                                allMemory.addAll(idxItems);
+                            } else {
+                                log.debug("Skipping knowledge index items (policy: skipKnowledge)");
+                            }
+                        } catch (Exception e) { log.warn("Index retrieve failed", e); }
                         try {
                             var convItems = convFuture.get();
                             convItems.forEach(i -> i.setRelevanceScore(i.getRelevanceScore() * 0.7));
                             allMemory.addAll(convItems);
                         } catch (Exception e) { log.warn("Conv retrieve failed", e); }
                         try {
-                            var epItems = epFuture.get();
-                            epItems.forEach(i -> i.setRelevanceScore(i.getRelevanceScore() * 0.8));
-                            allMemory.addAll(epItems);
-                        } catch (Exception e) { log.warn("Episodic retrieve failed", e); }
-                        try {
-                            var refItems = refFuture.get();
-                            refItems.forEach(i -> i.setRelevanceScore(i.getRelevanceScore() * 0.85));
-                            allMemory.addAll(refItems);
-                        } catch (Exception e) { log.warn("Reflection retrieve failed", e); }
-                        try {
-                            var procItems = procFuture.get();
-                            procItems.forEach(i -> i.setRelevanceScore(i.getRelevanceScore() * 0.75));
-                            allMemory.addAll(procItems);
-                        } catch (Exception e) { log.warn("Procedural retrieve failed", e); }
-                        try {
                             var factItems = factFuture.get();
                             for (var f : factItems) {
+                                // Dynamic relevance: combine confidence with keyword overlap.
+                                // Previously hardcoded to 0.95 — now uses the fact's actual
+                                // relevance to the current task query.
+                                double relevance = computeFactRelevance(task.getRawInput(), f);
                                 var item = new MemoryItem(MemoryType.FACT, String.format(
                                         "[Fact] %s = %s (%.2f)", f.getType(), f.getCurrentValue(), f.getConfidence()));
-                                item.setRelevanceScore(0.95); // facts are highly relevant
+                                item.setRelevanceScore(relevance);
                                 item.setMetadata(java.util.Map.of(
                                         "fact_type", f.getType(),
                                         "current_value", f.getCurrentValue(),
@@ -210,24 +203,31 @@ public class ContextBuilder {
                             }
                         } catch (Exception e) { log.warn("Fact retrieve failed", e); }
 
+                        // L1 + L2: Intent-aware relevance filtering
+                        // Remove items below the policy's minimum relevance threshold
+                        if (minRelevanceScore > 0) {
+                            int before = allMemory.size();
+                            allMemory.removeIf(item -> item.getRelevanceScore() < minRelevanceScore);
+                            int removed = before - allMemory.size();
+                            if (removed > 0) {
+                                log.info("Policy filter (minRelevance={}): removed {} low-relevance items",
+                                        minRelevanceScore, removed);
+                            }
+                        }
+
                         // Relevance Ranking
                         allMemory.sort((a, b) -> Double.compare(b.getRelevanceScore(), a.getRelevanceScore()));
                         ctx.setMemory(allMemory);
-
-                        // Knowledge
-                        try { ctx.setKnowledge(semFuture.get()); } catch (Exception e) {
-                            log.warn("Semantic retrieve failed", e);
-                        }
+                        ctx.setKnowledge(new ArrayList<>());
 
                         // Normalize + Deduplicate
                         merger.normalize(ctx);
                         merger.deduplicate(ctx);
 
-                        log.info("Context built: memory(total={}, ltm={}, conv={}, ep={}, ref={}, proc={}, fact={}), knowledge={}",
+                        log.info("Context built: memory(total={}, index={}, conv={}, fact={}, minScore={})",
                                 allMemory.size(),
-                                safeSize(ltmFuture), safeSize(convFuture), safeSize(epFuture),
-                                safeSize(refFuture), safeSize(procFuture), safeFSize(factFuture),
-                                safeKSize(semFuture));
+                                safeIndexSize(indexFuture), safeSize(convFuture),
+                                safeFSize(factFuture), minRelevanceScore);
                         return ctx;
                     });
 
@@ -235,6 +235,24 @@ public class ContextBuilder {
             return CompletableFuture.failedFuture(
                     new ContextBuildException("Failed to build context: " + e.getMessage(), e));
         }
+    }
+
+    /**
+     * Compute fact-to-task relevance based on how well the fact's type and value
+     * match the user's raw input. Returns a value in [0, 1].
+     */
+    private double computeFactRelevance(String rawInput, FactRecord fact) {
+        if (rawInput == null || rawInput.isBlank()) return fact.getConfidence() * 0.5;
+        String q = rawInput.toLowerCase();
+        String factText = (fact.getType() + " " + fact.getCurrentValue()).toLowerCase();
+        String[] tokens = q.trim().split("\\s+");
+        if (tokens.length == 0) return fact.getConfidence() * 0.5;
+        long matchCount = java.util.Arrays.stream(tokens)
+                .filter(t -> t.length() >= 2 && factText.contains(t))
+                .count();
+        double keywordScore = (double) matchCount / tokens.length;
+        // Blend: keyword overlap (60%) + stored confidence (40%)
+        return Math.min(1.0, keywordScore * 0.6 + fact.getConfidence() * 0.4);
     }
 
     private CompletableFuture<List<KnowledgeChunk>> retrieveSemanticKnowledge(TaskSpec task, int topK) {
@@ -295,6 +313,9 @@ public class ContextBuilder {
         try { return f.get().size(); } catch (Exception e) { return -1; }
     }
     private static int safeFSize(CompletableFuture<List<FactRecord>> f) {
+        try { return f.get().size(); } catch (Exception e) { return -1; }
+    }
+    private static int safeIndexSize(CompletableFuture<List<MemoryItem>> f) {
         try { return f.get().size(); } catch (Exception e) { return -1; }
     }
 }

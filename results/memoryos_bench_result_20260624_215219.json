@@ -1,0 +1,218 @@
+{
+  "dataset" : "MemoryOS-Bench v1.0",
+  "num_instances" : 20,
+  "duration_seconds" : 145.9,
+  "llm" : "DeepSeekClient",
+  "by_type" : {
+    "fact" : {
+      "total" : 20,
+      "accuracy" : 0.9,
+      "write_accuracy" : 0.75,
+      "avg_score" : 0.9,
+      "avg_retrieval_recall" : 0.0,
+      "avg_latency_ms" : 7222.9,
+      "fact_correct_writes" : 15
+    }
+  },
+  "details" : [ {
+    "case_id" : "fact_001",
+    "type" : "fact",
+    "sub_type" : "profession",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 8849
+  }, {
+    "case_id" : "fact_002",
+    "type" : "fact",
+    "sub_type" : "profession",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 8652
+  }, {
+    "case_id" : "fact_003",
+    "type" : "fact",
+    "sub_type" : "profession",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 6144
+  }, {
+    "case_id" : "fact_004",
+    "type" : "fact",
+    "sub_type" : "profession",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 8773
+  }, {
+    "case_id" : "fact_005",
+    "type" : "fact",
+    "sub_type" : "profession",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 8791
+  }, {
+    "case_id" : "fact_006",
+    "type" : "fact",
+    "sub_type" : "profession",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 8915
+  }, {
+    "case_id" : "fact_007",
+    "type" : "fact",
+    "sub_type" : "profession",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 8988
+  }, {
+    "case_id" : "fact_008",
+    "type" : "fact",
+    "sub_type" : "profession",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 6457
+  }, {
+    "case_id" : "fact_009",
+    "type" : "fact",
+    "sub_type" : "company",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 6385
+  }, {
+    "case_id" : "fact_010",
+    "type" : "fact",
+    "sub_type" : "company",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 6471
+  }, {
+    "case_id" : "fact_011",
+    "type" : "fact",
+    "sub_type" : "company",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 7175
+  }, {
+    "case_id" : "fact_012",
+    "type" : "fact",
+    "sub_type" : "company",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 5092
+  }, {
+    "case_id" : "fact_013",
+    "type" : "fact",
+    "sub_type" : "company",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 7312
+  }, {
+    "case_id" : "fact_014",
+    "type" : "fact",
+    "sub_type" : "company",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 7094
+  }, {
+    "case_id" : "fact_015",
+    "type" : "fact",
+    "sub_type" : "company",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 6135
+  }, {
+    "case_id" : "fact_016",
+    "type" : "fact",
+    "sub_type" : "company",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : true,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 6670
+  }, {
+    "case_id" : "fact_017",
+    "type" : "fact",
+    "sub_type" : "city",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 7727
+  }, {
+    "case_id" : "fact_018",
+    "type" : "fact",
+    "sub_type" : "city",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 5145
+  }, {
+    "case_id" : "fact_019",
+    "type" : "fact",
+    "sub_type" : "city",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 7873
+  }, {
+    "case_id" : "fact_020",
+    "type" : "fact",
+    "sub_type" : "city",
+    "correct" : true,
+    "score" : 1.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 1,
+    "elapsed_ms" : 5810
+  } ]
+}

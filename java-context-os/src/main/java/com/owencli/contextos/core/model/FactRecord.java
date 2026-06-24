@@ -11,29 +11,40 @@ import java.util.UUID;
  * Unlike append-only memory, FactRecord tracks current_value + history
  * so the agent always reads the latest truth.
  * <p>
- * Example:
- * <pre>
- *   FactRecord{
- *     id = "fact_abc123",
- *     type = "user.name",
- *     currentValue = "李四",
- *     history = ["张三", "李四"],
- *     confidence = 0.98,
- *     status = ACTIVE,
- *     source = "rule:我叫张三",
- *     createdAt = ..., updatedAt = ...
- *   }
- * </pre>
+ * Fact types include: user.name, user.preferred_language, user.occupation,
+ * user.company, user.location, user.knowledge, user.preference,
+ * user.behavior, user.goal, user.correction.
  */
 public class FactRecord {
 
+    // ── Fact type constants ──
+    public static final String TYPE_NAME = "user.name";
+    public static final String TYPE_LANGUAGE = "user.preferred_language";
+    public static final String TYPE_PLATFORM = "user.preferred_platform";
+    public static final String TYPE_OCCUPATION = "user.occupation";
+    public static final String TYPE_COMPANY = "user.company";
+    public static final String TYPE_LOCATION = "user.location";
+    public static final String TYPE_SKILL = "user.skill";
+    public static final String TYPE_PREFERENCE = "user.preference";
+    public static final String TYPE_KNOWLEDGE = "user.knowledge";
+    public static final String TYPE_BEHAVIOR = "user.behavior";
+    public static final String TYPE_GOAL = "user.goal";
+    public static final String TYPE_CORRECTION = "user.correction";
+
+    public static final List<String> ALL_TYPES = List.of(
+            TYPE_NAME, TYPE_LANGUAGE, TYPE_PLATFORM, TYPE_OCCUPATION,
+            TYPE_COMPANY, TYPE_LOCATION, TYPE_SKILL, TYPE_PREFERENCE,
+            TYPE_KNOWLEDGE, TYPE_BEHAVIOR, TYPE_GOAL, TYPE_CORRECTION
+    );
+
     private String id;
-    private String type;           // e.g. "user.name", "user.preferred_language", "user.occupation"
-    private String currentValue;   // the current value (always the latest truth)
-    private List<String> history;  // full change history
-    private double confidence;     // 0.0 - 1.0
-    private String status;         // ACTIVE, ARCHIVED, SUPERSEDED
-    private String source;         // e.g. "rule:我叫(.+)", "llm", "manual"
+    private String type;
+    private String currentValue;
+    private List<String> history;
+    private double confidence;
+    private String status;          // ACTIVE, ARCHIVED, SUPERSEDED
+    private String source;          // e.g. "rule:我叫(.+)", "llm", "correction_signal"
+    private String sourceError;     // only for correction type — records the mistake
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -53,9 +64,6 @@ public class FactRecord {
         this.history.add(value);
     }
 
-    /**
-     * Update this fact with a new value. The old value moves to history.
-     */
     public void update(String newValue, double newConfidence, String source) {
         if (currentValue != null && !currentValue.equals(newValue)) {
             history.add(currentValue);
@@ -67,8 +75,6 @@ public class FactRecord {
     }
 
     public boolean isActive() { return "ACTIVE".equals(status); }
-
-    // ── Getters / Setters ──
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -84,6 +90,8 @@ public class FactRecord {
     public void setStatus(String status) { this.status = status; }
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
+    public String getSourceError() { return sourceError; }
+    public void setSourceError(String sourceError) { this.sourceError = sourceError; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

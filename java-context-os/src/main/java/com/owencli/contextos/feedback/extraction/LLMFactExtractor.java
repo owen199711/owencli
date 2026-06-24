@@ -43,7 +43,7 @@ public class LLMFactExtractor {
                         "[{\"type\": \"user.name\", \"value\": \"李四\", \"confidence\": 0.95}]\n\n" +
                         "Text: %s", input);
 
-        return llmClient.complete(prompt)
+        return llmClient.complete(prompt, null, 4096, 0.7, "json")
                 .thenApply(response -> {
                     String text = String.valueOf(response).trim();
                     return parseResponse(text);

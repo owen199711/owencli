@@ -107,14 +107,12 @@ class MemoryAgent:
     async def _ensure(self) -> None:
         if not self._initialized:
             await self.pipeline._ensure_store()
-            # 安装钩子：在 inspect 模式下捕获中间状态
-            if self._inspect:
-                self._install_hooks()
+            # 安装钩子：捕获 pipeline 各阶段的中间状态
+            self._install_hooks()
             self._initialized = True
 
     def _install_hooks(self) -> None:
-        """在 pipeline 上安装钩子，捕获中间状态。"""
-        store = self.pipeline.store
+        """在 pipeline 方法级安装钩子，捕获中间状态，而非复制整个 pipeline.run()。"""
 
         # 钩子1：捕获 LTM 检索结果
         original_retrieve = self.pipeline.long_term_memory.retrieve
@@ -126,54 +124,67 @@ class MemoryAgent:
 
         self.pipeline.long_term_memory.retrieve = hooked_retrieve
 
-        # 钩子2：捕获 UnifiedContext、OptimizedContext、PackagedContext
+        # 钩子2：捕获 builder.build 的输出
+        original_build = self.pipeline.builder.build
+
+        async def hooked_build(task):
+            unified = await original_build(task)
+            self._last_unified_context = unified
+            self._last_task = task
+            return unified
+
+        self.pipeline.builder.build = hooked_build
+
+        # 钩子3：捕获 optimizer.optimize 的输出
+        original_optimize = self.pipeline.optimizer.optimize
+
+        async def hooked_optimize(context, task=None):
+            optimized = await original_optimize(context, task)
+            self._last_optimized_context = optimized
+            return optimized
+
+        self.pipeline.optimizer.optimize = hooked_optimize
+
+        # 钩子4：捕获 packager.pack 的输出
+        original_pack = self.pipeline.packager.pack
+
+        def hooked_pack(optimized, provider):
+            packaged = original_pack(optimized, provider)
+            self._last_packaged_context = packaged
+            return packaged
+
+        self.pipeline.packager.pack = hooked_pack
+
+        # 钩子5：包装 pipeline.run 以在 answer 阶段打印 inspect 信息
         original_run = self.pipeline.run
 
         async def hooked_run(user_input):
-            await self.pipeline._ensure_store()
-            self.pipeline.conversation.add_turn(role="user", content=user_input)
-            from context_os.pipeline import time as _time
-            tracer_id = self.pipeline.tracer.start(task_id="", raw_input=user_input)
-            pstart = _time.time()
+            result = await original_run(user_input)
+            # 打印 inspect 信息（仅 answer 阶段）
+            if not self._suppress_inspect and self._last_unified_context is not None:
+                unified = self._last_unified_context
+                task = self._last_task
+                packaged = self._last_packaged_context
 
-            try:
-                # Step 1: Intent
-                task = await self.pipeline.task_parser.parse(user_input)
-
-                # Step 2: Build
-                unified = await self.pipeline.builder.build(task)
-                self._last_unified_context = unified
-                self._last_task = task
-
-                # ▶ 打印中间状态（仅 answer 阶段打印，ingest 时不刷屏）
-                if not self._suppress_inspect:
-                    print()
-                    print("═" * 100)
-                    print(f"  ▶ [INSPECT] 原始上下文 (UnifiedContext)")
-                    print(f"  ▶ 用户问题: {user_input}")
+                print()
+                print("═" * 100)
+                print(f"  ▶ [INSPECT] 原始上下文 (UnifiedContext)")
+                print(f"  ▶ 用户问题: {user_input}")
+                if task:
                     print(f"  ▶ TaskSpec: intent={task.intent.value}, goal={task.goal.value}")
-                    print(f"  ▶ 身份: {'✅' if unified.identity else '❌'}  "
-                          f"对话: {f'{len(unified.conversation.history)}轮' if unified.conversation else '❌'}  "
-                          f"环境: {'✅' if unified.environment else '❌'}")
-                    if unified.memory:
-                        print(f"  ▶ 检索到的记忆 (LTM): {len(unified.memory)} 条")
-                        for i, m in enumerate(unified.memory):
-                            print(f"    [{i+1}] type={m.type.value} score={m.relevance_score:.3f}")
-                            print(f"        content: {m.content[:500]}")
-                    else:
-                        print(f"  ▶ 检索到的记忆 (LTM): 未检索到记忆 (共 {len(self._last_ltm_results)} 条)")
-                    print()
+                print(f"  ▶ 身份: {'✅' if unified.identity else '❌'}  "
+                      f"对话: {f'{len(unified.conversation.history)}轮' if unified.conversation else '❌'}  "
+                      f"环境: {'✅' if unified.environment else '❌'}")
+                if unified.memory:
+                    print(f"  ▶ 检索到的记忆: {len(unified.memory)} 条")
+                    for i, m in enumerate(unified.memory):
+                        print(f"    [{i+1}] type={m.type.value} score={m.relevance_score:.3f}")
+                        print(f"        content: {m.content[:500]}")
+                else:
+                    print(f"  ▶ 检索到的记忆: 未检索到记忆 (共 {len(self._last_ltm_results)} 条)")
+                print()
 
-                # Step 3: Optimize
-                optimized = await self.pipeline.optimizer.optimize(unified, task)
-                self._last_optimized_context = optimized
-
-                # Step 4: Pack
-                packaged = self.pipeline.packager.pack(optimized, self.pipeline.provider)
-                self._last_packaged_context = packaged
-
-                # ▶ 打印最终 prompt（仅 answer 阶段）
-                if not self._suppress_inspect:
+                if packaged:
                     print(f"  ▶ [INSPECT] 最终 Prompt (发送给 LLM)")
                     print(f"  ▶ 长度: {len(packaged.raw_prompt)} chars")
                     print(f"  ▶ sections: {list(packaged.sections.keys())}")
@@ -184,40 +195,12 @@ class MemoryAgent:
                         print(f"    └─")
                     print()
 
-                # Step 5: LLM
-                llm_response = await self.pipeline.llm_client.complete(packaged.raw_prompt)
-                llm_latency = (_time.time() - pstart) * 1000
+                if result.get("response"):
+                    print(f"  ▶ 回复: {str(result['response'])[:500]}")
+                    print("═" * 100)
+                    print()
 
-                # 记录 assistant 回复（必须，否则 ConversationCollector 没有 assistant 记录）
-                self.pipeline.conversation.add_turn(role="assistant", content=str(llm_response)[:500])
-
-                # Step 6: Feedback + 记忆更新（必须，否则 ingest 的数据不会写入 LTM）
-                token_estimate = optimized.token_usage.used or len(packaged.raw_prompt) // 4
-                metrics = await self.pipeline.evaluator.evaluate(
-                    packed=packaged,
-                    llm_response=str(llm_response),
-                    latency_ms=llm_latency,
-                    token_count=token_estimate,
-                )
-                await self.pipeline.memory_updater.update_from_task(
-                    task=task,
-                    response=str(llm_response),
-                    metrics=metrics,
-                    user_id=self.pipeline.user_id,
-                )
-                self.pipeline.tracer.finish(success=metrics.success)
-
-                result = {
-                    "response": str(llm_response),
-                    "trace_id": tracer_id,
-                    "task_spec": task.model_dump(),
-                    "latency_ms": round(llm_latency, 1),
-                }
-                return result
-
-            except Exception as e:
-                self.pipeline.tracer.finish(success=False)
-                raise
+            return result
 
         self.pipeline.run = hooked_run
 
@@ -352,9 +335,11 @@ async def run_benchmark(
 
         # ── Agent B: MemoryAgent ──
         try:
-            memory_agent.pipeline.conversation._history.clear()
-        except Exception:
-            pass
+            memory_agent.pipeline.conversation.clear()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Failed to clear conversation history: %s", e)
         for session in sessions:
             await memory_agent.ingest_session(session)
         resp_b = await memory_agent.answer(question)

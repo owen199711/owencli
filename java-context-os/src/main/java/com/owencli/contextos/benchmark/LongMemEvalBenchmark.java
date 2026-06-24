@@ -4,9 +4,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.owencli.contextos.core.base.BaseLLMClient;
-import com.owencli.contextos.core.model.EvalMetrics;
 import com.owencli.contextos.core.model.LLMProvider;
-import com.owencli.contextos.core.model.TaskSpec;
+import com.owencli.contextos.core.model.MemoryItem;
+import com.owencli.contextos.core.model.UnifiedContext;
+import com.owencli.contextos.feedback.MemoryUpdateResult;
 import com.owencli.contextos.llm.DeepSeekClient;
 import com.owencli.contextos.llm.OpenAIClient;
 import com.owencli.contextos.pipeline.ContextOSPipeline;
@@ -15,9 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileWriter;
-import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -83,12 +82,118 @@ public class LongMemEvalBenchmark {
     }
 
     // ═══════════════════════════════════════════════════════
-    // MemoryAgent — full Context-OS pipeline
+    // AnswerDetail — enriched answer with memory context
+    // ═══════════════════════════════════════════════════════
+
+    static class AnswerDetail {
+        final String response;
+        final List<MemoryItem> retrievedMemories;
+        AnswerDetail(String response, List<MemoryItem> retrievedMemories) {
+            this.response = response;
+            this.retrievedMemories = retrievedMemories;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // MemoryMetrics — per-instance memory performance metrics
+    // ═══════════════════════════════════════════════════════
+
+    static class MemoryMetrics {
+        // Write accuracy
+        int totalSteps = 0;
+        int totalFactsSaved = 0;
+        int ltmWrites = 0;
+        int episodicWrites = 0;
+        int semanticWrites = 0;
+        double totalImportanceScore = 0.0;
+        int conflictCount = 0;
+
+        // Retrieval
+        double retrievalRecall = 0.0;          // answer keywords found in retrieved memories
+        int retrievedCount = 0;                // number of MemoryItems retrieved during answer
+        boolean retrievalHit = false;          // at least one retrieved memory matched answer
+
+        void recordIngest(MemoryUpdateResult r) {
+            if (r == null) return;
+            totalSteps++;
+            totalFactsSaved += r.getFactsSaved();
+            totalImportanceScore += r.getFinalScore();
+            if (r.isSavedToLTM()) ltmWrites++;
+            if (r.isSavedToEpisodic()) episodicWrites++;
+            if (r.isSavedToSemantic()) semanticWrites++;
+            if (r.isHasConflict()) conflictCount++;
+        }
+
+        void recordRetrieval(List<MemoryItem> memories, String answer) {
+            if (memories == null) memories = List.of();
+            retrievedCount = memories.size();
+
+            if (answer == null || answer.isEmpty() || memories.isEmpty()) {
+                retrievalRecall = 0.0;
+                retrievalHit = false;
+                return;
+            }
+
+            String ansNorm = normalizeText(answer);
+            var ansTokens = Arrays.stream(ansNorm.split("\\s+"))
+                    .filter(t -> !STOP_WORDS.contains(t) && t.length() > 1)
+                    .collect(Collectors.toList());
+
+            if (ansTokens.isEmpty()) {
+                retrievalRecall = 1.0;
+                retrievalHit = true;
+                return;
+            }
+
+            // Check each memory item individually for hit; concatenate all for recall
+            for (var mem : memories) {
+                String memNorm = normalizeText(mem.getContent() != null ? mem.getContent() : "");
+                long hits = ansTokens.stream().filter(memNorm::contains).count();
+                if ((double) hits / ansTokens.size() >= 0.3) {
+                    retrievalHit = true;
+                    break;
+                }
+            }
+
+            String allContent = memories.stream()
+                    .map(m -> normalizeText(m.getContent() != null ? m.getContent() : ""))
+                    .collect(Collectors.joining(" "));
+
+            long hits = ansTokens.stream().filter(allContent::contains).count();
+            retrievalRecall = (double) hits / ansTokens.size();
+        }
+
+        double getAvgImportance() { return totalSteps > 0 ? totalImportanceScore / totalSteps : 0; }
+        double getFactsPerStep()  { return totalSteps > 0 ? (double) totalFactsSaved / totalSteps : 0; }
+        double getLtmWriteRate()  { return totalSteps > 0 ? (double) ltmWrites / totalSteps : 0; }
+        double getEpiWriteRate()  { return totalSteps > 0 ? (double) episodicWrites / totalSteps : 0; }
+        double getSemWriteRate()  { return totalSteps > 0 ? (double) semanticWrites / totalSteps : 0; }
+
+        Map<String, Object> toMap() {
+            var m = new LinkedHashMap<String, Object>();
+            m.put("total_steps", totalSteps);
+            m.put("total_facts_saved", totalFactsSaved);
+            m.put("avg_facts_per_step", Math.round(getFactsPerStep() * 1000.0) / 1000.0);
+            m.put("ltm_write_rate", Math.round(getLtmWriteRate() * 1000.0) / 1000.0);
+            m.put("episodic_write_rate", Math.round(getEpiWriteRate() * 1000.0) / 1000.0);
+            m.put("semantic_write_rate", Math.round(getSemWriteRate() * 1000.0) / 1000.0);
+            m.put("avg_importance_score", Math.round(getAvgImportance() * 1000.0) / 1000.0);
+            m.put("conflict_count", conflictCount);
+            m.put("retrieval_recall", Math.round(retrievalRecall * 1000.0) / 1000.0);
+            m.put("retrieved_count", retrievedCount);
+            m.put("retrieval_hit", retrievalHit);
+            return m;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // MemoryAgent — full Context-OS pipeline (instrumented)
     // ═══════════════════════════════════════════════════════
 
     static class MemoryAgent {
         private final ContextOSPipeline pipeline;
         private boolean initialized = false;
+        private final List<MemoryUpdateResult> ingestMetrics = new ArrayList<>();
 
         MemoryAgent(BaseLLMClient llmClient, String dbPath) {
             String providerName = llmClient.getClass().getSimpleName().toLowerCase();
@@ -110,13 +215,26 @@ public class LongMemEvalBenchmark {
             return CompletableFuture.completedFuture(null);
         }
 
+        /** Reset ingest metrics for a new evaluation instance. */
+        void resetMetrics() {
+            ingestMetrics.clear();
+        }
+
+        /** Ingest session turns and collect MemoryUpdateResult for write accuracy metrics. */
         CompletableFuture<Void> ingestSession(List<Map<String, String>> turns) {
             return ensure().thenCompose(v -> {
                 var futures = turns.stream()
                         .filter(t -> "user".equals(t.get("role")))
                         .map(t -> pipeline.run(t.get("content"))
+                                .thenAccept(result -> {
+                                    if (result != null && result.get("memory_update") instanceof MemoryUpdateResult mr) {
+                                        synchronized (ingestMetrics) {
+                                            ingestMetrics.add(mr);
+                                        }
+                                    }
+                                })
                                 .exceptionally(e -> {
-                                    log.debug("Ingest ignored: {}", e.getMessage());
+                                    log.warn("Ingest failed: {}", e.getMessage());
                                     return null;
                                 }))
                         .toArray(CompletableFuture[]::new);
@@ -124,12 +242,29 @@ public class LongMemEvalBenchmark {
             });
         }
 
-        CompletableFuture<String> answer(String question) {
+        /** Answer a question AND capture the retrieved memory context. */
+        CompletableFuture<AnswerDetail> answerWithDetail(String question) {
             return ensure().thenCompose(v ->
                     pipeline.run(question).thenApply(result -> {
-                        var response = (String) result.get("response");
-                        return response != null ? response.trim() : "";
-                    }).exceptionally(e -> "[ERROR] " + e.getMessage()));
+                        String response = (String) result.get("response");
+                        response = response != null ? response.trim() : "";
+
+                        List<MemoryItem> memories = List.of();
+                        if (result.get("unified_context") instanceof UnifiedContext ctx) {
+                            memories = ctx.getMemory();
+                        }
+                        return new AnswerDetail(response, memories);
+                    }).exceptionally(e ->
+                            new AnswerDetail("[ERROR] " + e.getMessage(), List.of())));
+        }
+
+        /** Build aggregate MemoryMetrics for this evaluation instance. */
+        MemoryMetrics computeMetrics(String answer) {
+            var mm = new MemoryMetrics();
+            for (var mr : ingestMetrics) {
+                mm.recordIngest(mr);
+            }
+            return mm;
         }
 
         CompletableFuture<Void> close() {
@@ -193,6 +328,17 @@ public class LongMemEvalBenchmark {
         var allResults = new ArrayList<Map<String, Object>>();
         long tStart = System.currentTimeMillis();
 
+        // Memory metrics accumulators (per question_type)
+        // We store arrays so we can atomically update them in the loop
+        var memTotalSteps = new LinkedHashMap<String, double[]>();       // [sum]
+        var memTotalFacts = new LinkedHashMap<String, double[]>();      // [sum]
+        var memLtmWrites = new LinkedHashMap<String, double[]>();       // [sum]
+        var memEpiWrites = new LinkedHashMap<String, double[]>();       // [sum]
+        var memSemWrites = new LinkedHashMap<String, double[]>();       // [sum]
+        var memRecall    = new LinkedHashMap<String, double[]>();       // [sum]
+        var memHitCount  = new LinkedHashMap<String, double[]>();       // [sum]
+        var memAvgImport = new LinkedHashMap<String, double[]>();       // [sum]
+
         for (int idx = 0; idx < data.size(); idx++) {
             var inst = data.get(idx);
             String qid = (String) inst.get("question_id");
@@ -206,18 +352,30 @@ public class LongMemEvalBenchmark {
             System.out.printf("\r[%d/%d] %-30s (%d sessions)...",
                     idx + 1, data.size(), qtype, sessions.size());
 
-            // Clear conversation history for memory agent
+            // ═══════════════════════════════════════
+            // Agent B: MemoryAgent (with instrumented metrics)
+            // ═══════════════════════════════════════
             memoryAgent.pipeline.getConversationCollector().clear();
+            memoryAgent.resetMetrics();
 
-            // Agent B: MemoryAgent
+            // Ingest: automatically collects MemoryUpdateResult
             for (var session : sessions) {
                 memoryAgent.ingestSession(session).join();
             }
-            String respB = memoryAgent.answer(question).join();
+
+            // Answer: captures retrieved memories from UnifiedContext
+            var answerDetail = memoryAgent.answerWithDetail(question).join();
+            String respB = answerDetail.response;
             double scoreB = keywordOverlapScore(respB, answer);
             boolean correctB = isCorrect(respB, answer, 0.5);
 
-            // Agent A: SimpleAgent
+            // Compute memory metrics for this instance
+            var memMetrics = memoryAgent.computeMetrics(answer);
+            memMetrics.recordRetrieval(answerDetail.retrievedMemories, answer);
+
+            // ═══════════════════════════════════════
+            // Agent A: SimpleAgent (baseline)
+            // ═══════════════════════════════════════
             double scoreA = 0.0;
             boolean correctA = false;
             String respA = "";
@@ -231,7 +389,9 @@ public class LongMemEvalBenchmark {
                 correctA = isCorrect(respA, answer, 0.5);
             }
 
-            // Aggregate stats
+            // ═══════════════════════════════════════
+            // Aggregate stats by question_type
+            // ═══════════════════════════════════════
             var stats = resultsByType.computeIfAbsent(qtype, k -> {
                 var m = new LinkedHashMap<String, Object>();
                 m.put("total", new AtomicInteger(0));
@@ -247,6 +407,17 @@ public class LongMemEvalBenchmark {
             ((double[]) stats.get("score_a"))[0] += scoreA;
             ((double[]) stats.get("score_b"))[0] += scoreB;
 
+            // Aggregate memory metrics
+            memTotalSteps.computeIfAbsent(qtype, k -> new double[1])[0] += memMetrics.totalSteps;
+            memTotalFacts.computeIfAbsent(qtype, k -> new double[1])[0] += memMetrics.totalFactsSaved;
+            memLtmWrites.computeIfAbsent(qtype, k -> new double[1])[0] += memMetrics.ltmWrites;
+            memEpiWrites.computeIfAbsent(qtype, k -> new double[1])[0] += memMetrics.episodicWrites;
+            memSemWrites.computeIfAbsent(qtype, k -> new double[1])[0] += memMetrics.semanticWrites;
+            memRecall.computeIfAbsent(qtype, k -> new double[1])[0] += memMetrics.retrievalRecall;
+            memHitCount.computeIfAbsent(qtype, k -> new double[1])[0] += memMetrics.retrievalHit ? 1 : 0;
+            memAvgImport.computeIfAbsent(qtype, k -> new double[1])[0] += memMetrics.getAvgImportance();
+
+            // Add memory metrics to per-instance detail
             var detail = new LinkedHashMap<String, Object>();
             detail.put("question_id", qid);
             detail.put("question_type", qtype);
@@ -258,6 +429,7 @@ public class LongMemEvalBenchmark {
             detail.put("score_b", Math.round(scoreB * 1000.0) / 1000.0);
             detail.put("correct_a", correctA);
             detail.put("correct_b", correctB);
+            detail.put("memory_metrics", memMetrics.toMap());
             allResults.add(detail);
         }
 
@@ -319,6 +491,77 @@ public class LongMemEvalBenchmark {
         System.out.printf("  F1 提升:    %+.3f%n", deltaF1);
         System.out.println("=" .repeat(90));
 
+        // ═══════════════════════════════════════════
+        // Memory Metrics Report
+        // ═══════════════════════════════════════════
+
+        System.out.println("\n  记忆写入准确率 (Write Accuracy)");
+        System.out.println("-" .repeat(90));
+        System.out.printf("  %-30s %6s %7s %8s %8s %8s%n",
+                "类型", "步骤", "LTM率", "Epi率", "Sem率", "事实/步");
+        System.out.println("-" .repeat(90));
+
+        int totalStepsAll = 0, totalFactsAll = 0, totalLtmAll = 0, totalEpiAll = 0, totalSemAll = 0;
+        for (var entry : resultsByType.entrySet()) {
+            String k = entry.getKey();
+            int steps = (int) Math.round(memTotalSteps.getOrDefault(k, new double[1])[0]);
+            int facts = (int) Math.round(memTotalFacts.getOrDefault(k, new double[1])[0]);
+            int ltm   = (int) Math.round(memLtmWrites.getOrDefault(k, new double[1])[0]);
+            int epi   = (int) Math.round(memEpiWrites.getOrDefault(k, new double[1])[0]);
+            int sem   = (int) Math.round(memSemWrites.getOrDefault(k, new double[1])[0]);
+
+            double ltmRate = steps > 0 ? (double) ltm / steps : 0;
+            double epiRate = steps > 0 ? (double) epi / steps : 0;
+            double semRate = steps > 0 ? (double) sem / steps : 0;
+            double factsPerStep = steps > 0 ? (double) facts / steps : 0;
+
+            System.out.printf("  %-30s %6d %6.1f%% %7.1f%% %7.1f%% %9.2f%n",
+                    k, steps, ltmRate * 100, epiRate * 100, semRate * 100, factsPerStep);
+
+            totalStepsAll += steps;
+            totalFactsAll += facts;
+            totalLtmAll += ltm;
+            totalEpiAll += epi;
+            totalSemAll += sem;
+        }
+        System.out.println("-" .repeat(90));
+        double tLtmRate = totalStepsAll > 0 ? (double) totalLtmAll / totalStepsAll : 0;
+        double tEpiRate = totalStepsAll > 0 ? (double) totalEpiAll / totalStepsAll : 0;
+        double tSemRate = totalStepsAll > 0 ? (double) totalSemAll / totalStepsAll : 0;
+        double tFactsPerStep = totalStepsAll > 0 ? (double) totalFactsAll / totalStepsAll : 0;
+        System.out.printf("  %-30s %6d %6.1f%% %7.1f%% %7.1f%% %9.2f%n",
+                "TOTAL", totalStepsAll, tLtmRate * 100, tEpiRate * 100, tSemRate * 100, tFactsPerStep);
+        System.out.println("=" .repeat(90));
+
+        System.out.println("\n  记忆检索召回率 (Retrieval Recall)");
+        System.out.println("-" .repeat(90));
+        System.out.printf("  %-30s %6s %10s %8s%n",
+                "类型", "实例数", "召回率", "Hit@k");
+        System.out.println("-" .repeat(90));
+
+        double totalRecall = 0, totalHitCount = 0;
+        for (var entry : resultsByType.entrySet()) {
+            String k = entry.getKey();
+            int n = ((AtomicInteger) entry.getValue().get("total")).get();
+            double recall = memRecall.getOrDefault(k, new double[1])[0];
+            double hits  = memHitCount.getOrDefault(k, new double[1])[0];
+
+            double avgRecall = n > 0 ? recall / n : 0;
+            double hitRate   = n > 0 ? hits / n : 0;
+
+            System.out.printf("  %-30s %6d %9.1f%% %7.1f%%%n",
+                    k, n, avgRecall * 100, hitRate * 100);
+
+            totalRecall += recall;
+            totalHitCount += hits;
+        }
+        System.out.println("-" .repeat(90));
+        double avgRecallAll = totalCount > 0 ? totalRecall / totalCount : 0;
+        double hitRateAll   = totalCount > 0 ? totalHitCount / totalCount : 0;
+        System.out.printf("  %-30s %6d %9.1f%% %7.1f%%%n",
+                "TOTAL", totalCount, avgRecallAll * 100, hitRateAll * 100);
+        System.out.println("=" .repeat(90));
+
         // ── Save results ──
         Files.createDirectories(Paths.get(outputDir));
         String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
@@ -329,7 +572,9 @@ public class LongMemEvalBenchmark {
         summary.put("llm", llmClient.getClass().getSimpleName());
 
         var byType = new LinkedHashMap<String, Object>();
+        var memByType = new LinkedHashMap<String, Object>();
         for (var entry : resultsByType.entrySet()) {
+            String k = entry.getKey();
             var s = entry.getValue();
             int n = ((AtomicInteger) s.get("total")).get();
             int cA = ((AtomicInteger) s.get("correct_a")).get();
@@ -343,7 +588,28 @@ public class LongMemEvalBenchmark {
             bt.put("acc_memory", Math.round((double) cB / n * 1000.0) / 1000.0);
             bt.put("f1_simple", Math.round(sA / n * 1000.0) / 1000.0);
             bt.put("f1_memory", Math.round(sB / n * 1000.0) / 1000.0);
-            byType.put(entry.getKey(), bt);
+            byType.put(k, bt);
+
+            // Memory metrics per type
+            int steps = (int) Math.round(memTotalSteps.getOrDefault(k, new double[1])[0]);
+            int facts = (int) Math.round(memTotalFacts.getOrDefault(k, new double[1])[0]);
+            int ltm   = (int) Math.round(memLtmWrites.getOrDefault(k, new double[1])[0]);
+            int epi   = (int) Math.round(memEpiWrites.getOrDefault(k, new double[1])[0]);
+            int sem   = (int) Math.round(memSemWrites.getOrDefault(k, new double[1])[0]);
+            double recall = memRecall.getOrDefault(k, new double[1])[0];
+            double hits  = memHitCount.getOrDefault(k, new double[1])[0];
+
+            var mt = new LinkedHashMap<String, Object>();
+            mt.put("count", n);
+            mt.put("total_steps", steps);
+            mt.put("total_facts_saved", facts);
+            mt.put("ltm_write_rate", steps > 0 ? Math.round((double) ltm / steps * 1000.0) / 1000.0 : 0);
+            mt.put("episodic_write_rate", steps > 0 ? Math.round((double) epi / steps * 1000.0) / 1000.0 : 0);
+            mt.put("semantic_write_rate", steps > 0 ? Math.round((double) sem / steps * 1000.0) / 1000.0 : 0);
+            mt.put("facts_per_step", steps > 0 ? Math.round((double) facts / steps * 1000.0) / 1000.0 : 0);
+            mt.put("retrieval_recall", n > 0 ? Math.round(recall / n * 1000.0) / 1000.0 : 0);
+            mt.put("retrieval_hit_rate", n > 0 ? Math.round(hits / n * 1000.0) / 1000.0 : 0);
+            memByType.put(k, mt);
         }
         summary.put("by_type", byType);
 
@@ -354,7 +620,18 @@ public class LongMemEvalBenchmark {
         overall.put("f1_memory", Math.round(totalScoreB / totalCount * 1000.0) / 1000.0);
         overall.put("delta_acc", Math.round(deltaAcc * 1000.0) / 1000.0);
         overall.put("delta_f1", Math.round(deltaF1 * 1000.0) / 1000.0);
+
+        var memOverall = new LinkedHashMap<String, Object>();
+        memOverall.put("ltm_write_rate", totalStepsAll > 0 ? Math.round((double) totalLtmAll / totalStepsAll * 1000.0) / 1000.0 : 0);
+        memOverall.put("episodic_write_rate", totalStepsAll > 0 ? Math.round((double) totalEpiAll / totalStepsAll * 1000.0) / 1000.0 : 0);
+        memOverall.put("semantic_write_rate", totalStepsAll > 0 ? Math.round((double) totalSemAll / totalStepsAll * 1000.0) / 1000.0 : 0);
+        memOverall.put("avg_facts_per_step", totalStepsAll > 0 ? Math.round((double) totalFactsAll / totalStepsAll * 1000.0) / 1000.0 : 0);
+        memOverall.put("retrieval_recall", totalCount > 0 ? Math.round(totalRecall / totalCount * 1000.0) / 1000.0 : 0);
+        memOverall.put("retrieval_hit_rate", totalCount > 0 ? Math.round(totalHitCount / totalCount * 1000.0) / 1000.0 : 0);
+
+        overall.put("memory_metrics", memOverall);
         summary.put("overall", overall);
+        summary.put("memory_by_type", memByType);
         summary.put("details", allResults);
 
         String outFile = Paths.get(outputDir, "longmemeval_result_" + ts + ".json").toString();

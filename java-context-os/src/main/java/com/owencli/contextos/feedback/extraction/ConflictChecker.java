@@ -47,6 +47,8 @@ public class ConflictChecker {
                         .toList());
     }
 
+    private static final double MIN_ACCEPTABLE_CONFIDENCE = 0.3;
+
     private CompletableFuture<ResolvedFact> resolveConflict(CandidateFact candidate) {
         return factMemory.getFact(candidate.type()).thenApply(existing -> {
             if (existing.isEmpty()) {
@@ -62,18 +64,29 @@ public class ConflictChecker {
                 return new ResolvedFact(candidate, "NO_CHANGE", oldValue);
             }
 
-            // Value differs — this is an UPDATE
-            // Higher confidence wins; if tie, the newer value wins
-            if (candidate.confidence() >= existingFact.getConfidence()) {
-                log.info("Conflict resolved: {} changed from '{}' to '{}' (confidence {})",
-                        candidate.type(), oldValue, candidate.value(), candidate.confidence());
-                return new ResolvedFact(candidate, "UPDATE", oldValue);
-            } else {
-                // New fact has lower confidence — keep the old value
-                log.info("Conflict resolved: keeping existing '{}'={} (existing confidence {} > new {})",
-                        candidate.type(), oldValue, existingFact.getConfidence(), candidate.confidence());
+            // Same type, different value — newer information supersedes older.
+            //
+            // FactRecord.update() already preserves the old value in history[],
+            // so there is no data loss — the version chain is always intact.
+            //
+            // DO NOT compare against old confidence: a career change from
+            // "Java开发工程师" (rule-matched, 0.95) to "Go开发工程师"
+            // (LLM-extracted, 0.85) is still a valid update. The old fact's
+            // high confidence doesn't make the new information wrong.
+            //
+            // The minimum confidence check below is only a sanity guard
+            // against garbage data (e.g. a malformed LLM response).
+            if (candidate.confidence() < MIN_ACCEPTABLE_CONFIDENCE) {
+                log.info("Conflict resolved: rejecting '{}'={} (confidence {:.2f} < min {:.2f})",
+                        candidate.type(), candidate.value(), candidate.confidence(),
+                        MIN_ACCEPTABLE_CONFIDENCE);
                 return new ResolvedFact(candidate, "REJECTED_LOW_CONFIDENCE", oldValue);
             }
+
+            log.info("Conflict resolved: {} updated from '{}' to '{}' (old confidence {:.2f}, new {:.2f})",
+                    candidate.type(), oldValue, candidate.value(),
+                    existingFact.getConfidence(), candidate.confidence());
+            return new ResolvedFact(candidate, "UPDATE", oldValue);
         });
     }
 

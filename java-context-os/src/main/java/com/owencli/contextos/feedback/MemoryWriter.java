@@ -9,8 +9,16 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Memory Writer — final step in the MemoryUpdater pipeline.
- * Writes processed content to the appropriate memory stores based on importance and type.
+ * Memory Writer — writes processed content to appropriate memory stores.
+ * <p>
+ * Routing:
+ *   Working       ✅ Always
+ *   Conversation  ✅ Always (TTL managed by store)
+ *   LearnedBehav  ✅ Always (tool execs, procedures, reflections)
+ *   Episodic      ✅ On success
+ *   LongTerm      ✅ On importance > 0.75, no duplicate
+ *   Semantic      ✅ On important + has concepts
+ *   Fact          Handled by MemoryExtractionEngine separately
  */
 public class MemoryWriter {
 
@@ -18,58 +26,55 @@ public class MemoryWriter {
 
     private final WorkingMemory working;
     private final ConversationMemory conversation;
-    private final TaskMemory task;
+    private final LearnedBehaviorMemory learnedBehavior;
     private final LongTermMemory longTerm;
     private final EpisodicMemory episodic;
     private final SemanticMemory semantic;
 
     public MemoryWriter(WorkingMemory working, ConversationMemory conversation,
-                        TaskMemory task, LongTermMemory longTerm,
-                        EpisodicMemory episodic, SemanticMemory semantic) {
+                        LearnedBehaviorMemory learnedBehavior,
+                        LongTermMemory longTerm, EpisodicMemory episodic,
+                        SemanticMemory semantic) {
         this.working = working;
         this.conversation = conversation;
-        this.task = task;
+        this.learnedBehavior = learnedBehavior;
         this.longTerm = longTerm;
         this.episodic = episodic;
         this.semantic = semantic;
-        log.info("MemoryWriter initialized");
+        log.info("MemoryWriter initialized (7-type routing)");
     }
 
     public CompletableFuture<Void> write(DeduplicationResult dedupResult, String userId) {
         var extracted = dedupResult.getResolved().getScored().getExtracted();
         var scored = dedupResult.getResolved().getScored();
 
-        // 1. Always write to Working Memory (active session)
+        // 1. Working Memory (always)
         CompletableFuture<Void> wmFuture = CompletableFuture.runAsync(() -> {
             try {
                 working.push("User: " + extracted.getInput() + "\nAssistant: " + truncate(extracted.getResponse(), 500),
                         Map.of("task_id", extracted.getIntent(), "role", "conversation"));
-            } catch (Exception e) {
-                log.warn("WM write failed: {}", e.getMessage());
-            }
+            } catch (Exception e) { log.warn("WM write failed: {}", e.getMessage()); }
         });
 
-        // 2. Always write to Conversation Memory (session history)
+        // 2. Conversation Memory (always)
         CompletableFuture<Void> convFuture = conversation.addTurn("user", extracted.getInput())
                 .thenCompose(v -> conversation.addTurn("assistant", truncate(extracted.getResponse(), 5000)))
                 .thenAccept(v -> {});
 
-        // 3. Always write to Task Memory
-        CompletableFuture<Void> taskFuture = task.recordTask(
+        // 3. Learned Behavior: record task as a procedure trace
+        CompletableFuture<Void> lbFuture = learnedBehavior.recordProcedure(
                 extracted.getIntent(),
-                truncate(extracted.getInput(), 100),
-                extracted.getIntent(),
-                extracted.isSuccess() ? "completed" : "failed",
-                Map.of("response_length", extracted.getResponse() != null ? extracted.getResponse().length() : 0)
+                truncate(extracted.getInput(), 80) + " → " + truncate(extracted.getResponse(), 120),
+                extracted.getIntent()
         ).thenAccept(v -> {});
 
-        // 4. Only write important items to LTM
+        // 4. LongTerm Memory (only important, non-duplicate)
         CompletableFuture<Void> ltmFuture = CompletableFuture.completedFuture(null);
         if (scored.isShouldSave() && !dedupResult.isWasDuplicate()) {
-            String conciseSummary = "[" + extracted.getIntent() + "] "
+            String concise = "[" + extracted.getIntent() + "] "
                     + truncate(extracted.getInput(), 80) + " → "
                     + truncate(extracted.getResponse(), 120);
-            ltmFuture = longTerm.save(conciseSummary, "long_term", Map.of(
+            ltmFuture = longTerm.save(concise, "long_term", Map.of(
                     "category", "task_resolution",
                     "intent", extracted.getIntent(),
                     "success", extracted.isSuccess(),
@@ -77,7 +82,7 @@ public class MemoryWriter {
             ), null, userId).thenAccept(id -> {});
         }
 
-        // 5. Record successful episodes
+        // 5. Episodic Memory (on success)
         CompletableFuture<Void> epFuture = CompletableFuture.completedFuture(null);
         if (extracted.isSuccess()) {
             epFuture = episodic.recordSuccess(
@@ -88,7 +93,7 @@ public class MemoryWriter {
                     .thenAccept(id -> {});
         }
 
-        // 6. Semantic: extract concepts from important content
+        // 6. Semantic Memory (important + has concepts)
         CompletableFuture<Void> semFuture = CompletableFuture.completedFuture(null);
         if (!extracted.getKeyConcepts().isEmpty() && scored.isShouldSave()) {
             semFuture = CompletableFuture.allOf(
@@ -100,7 +105,7 @@ public class MemoryWriter {
             ).thenAccept(v -> {});
         }
 
-        return CompletableFuture.allOf(wmFuture, convFuture, taskFuture, ltmFuture, epFuture, semFuture)
+        return CompletableFuture.allOf(wmFuture, convFuture, lbFuture, ltmFuture, epFuture, semFuture)
                 .thenAccept(v -> log.info("MemoryWriter: write complete (important={}, saveLTM={}, duplicate={})",
                         extracted.isImportant(), scored.isShouldSave(), dedupResult.isWasDuplicate()));
     }

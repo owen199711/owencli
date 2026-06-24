@@ -4,32 +4,28 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Memory Manager — unified facade over all 10 memory subsystems.
+ * Memory Manager — unified facade over 7 memory subsystems.
  * <p>
  * Architecture:
  * <pre>
  *                    Memory Manager
  *         ┌──────────────┐
- *         │ Working      │
+ *         │ Working      │  Session, in-memory
  *         ├──────────────┤
- *         │ Conversation │
+ *         │ Conversation │  24h~30d TTL
  *         ├──────────────┤
- *         │ Task         │
+ *         │ Episodic     │  Permanent, vectorized
  *         ├──────────────┤
- *         │ LongTerm     │
+ *         │ Semantic     │  Knowledge graph
  *         ├──────────────┤
- *         │ Episodic     │
+ *         │ Fact         │  KV with versioning
  *         ├──────────────┤
- *         │ Semantic     │
+ *         │ LearnedBehav │  Procedures + tool stats
  *         ├──────────────┤
- *         │ Procedural   │
- *         ├──────────────┤
- *         │ Tool         │
- *         ├──────────────┤
- *         │ Reflection   │
- *         ├──────────────┤
- *         │ Fact         │
+ *         │ LongTerm     │  Base persistent storage
  *         └──────────────┘
+ *
+ *   LongTermIndex — global vector retrieval layer (queries across stores)
  * </pre>
  */
 public class MemoryManager {
@@ -38,41 +34,34 @@ public class MemoryManager {
 
     private final WorkingMemory working;
     private final ConversationMemory conversation;
-    private final TaskMemory task;
-    private final LongTermMemory longTerm;
     private final EpisodicMemory episodic;
     private final SemanticMemory semantic;
-    private final ProceduralMemory procedural;
-    private final ToolExperienceMemory tool;
-    private final ReflectionMemory reflection;
     private final FactMemory fact;
+    private final LearnedBehaviorMemory learnedBehavior;
+    private final LongTermMemory longTerm;
+    private final LongTermIndex index;
 
     public MemoryManager(WorkingMemory working, ConversationMemory conversation,
-                         TaskMemory task, LongTermMemory longTerm,
                          EpisodicMemory episodic, SemanticMemory semantic,
-                         ProceduralMemory procedural, ToolExperienceMemory tool,
-                         ReflectionMemory reflection, FactMemory fact) {
+                         FactMemory fact, LearnedBehaviorMemory learnedBehavior,
+                         LongTermMemory longTerm, LongTermIndex index) {
         this.working = working;
         this.conversation = conversation;
-        this.task = task;
-        this.longTerm = longTerm;
         this.episodic = episodic;
         this.semantic = semantic;
-        this.procedural = procedural;
-        this.tool = tool;
-        this.reflection = reflection;
         this.fact = fact;
-        log.info("MemoryManager initialized with 10 memory subsystems (incl. Fact)");
+        this.learnedBehavior = learnedBehavior;
+        this.longTerm = longTerm;
+        this.index = index;
+        log.info("MemoryManager initialized with 7 subsystems + LongTermIndex");
     }
 
     public WorkingMemory getWorking() { return working; }
     public ConversationMemory getConversation() { return conversation; }
-    public TaskMemory getTask() { return task; }
-    public LongTermMemory getLongTerm() { return longTerm; }
     public EpisodicMemory getEpisodic() { return episodic; }
     public SemanticMemory getSemantic() { return semantic; }
-    public ProceduralMemory getProcedural() { return procedural; }
-    public ToolExperienceMemory getTool() { return tool; }
-    public ReflectionMemory getReflection() { return reflection; }
     public FactMemory getFact() { return fact; }
+    public LearnedBehaviorMemory getLearnedBehavior() { return learnedBehavior; }
+    public LongTermMemory getLongTerm() { return longTerm; }
+    public LongTermIndex getIndex() { return index; }
 }

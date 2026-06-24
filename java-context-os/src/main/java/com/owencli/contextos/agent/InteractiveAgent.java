@@ -107,7 +107,7 @@ public class InteractiveAgent {
 
             // ── 显示调试过程 ──
             if (showDebug) {
-                showPipelineDebug(input, task, unified, optimized, packaged, memUpdate);
+                showPipelineDebug(input, task, unified, optimized, packaged, memUpdate, response);
             }
 
             // ── 显示回复 ──
@@ -129,7 +129,8 @@ public class InteractiveAgent {
                                    UnifiedContext unified,
                                    OptimizedContext optimized,
                                    PackagedContext packaged,
-                                   MemoryUpdateResult memUpdate) {
+                                   MemoryUpdateResult memUpdate,
+                                   String response) {
         System.out.println("\n" + "─".repeat(60));
         System.out.println("📋 Pipeline 详细过程");
         System.out.println("─".repeat(60));
@@ -279,6 +280,11 @@ public class InteractiveAgent {
         }
 
         System.out.println("─".repeat(60));
+
+        // ── Step 7: LLM 回答 ──
+        System.out.println("\n🔹 Step 7: LLM 回答");
+        System.out.println("    " + response);
+        System.out.println("─".repeat(60));
     }
 
     private void handleCommand(String cmd) {
@@ -304,7 +310,7 @@ public class InteractiveAgent {
 
     private void showMemories() {
         System.out.println("\n" + "=".repeat(60));
-        System.out.println("  记忆系统状态 (Memory System Status)");
+        System.out.println("  记忆系统状态 (7-type Architecture)");
         System.out.println("=".repeat(60));
 
         var mm = pipeline.getMemoryManager();
@@ -321,56 +327,34 @@ public class InteractiveAgent {
         }
 
         // 2. Conversation Memory
-        printMemoryList("💬 Conversation Memory (对话历史, 24h TTL)", () ->
+        printMemoryList("💬 Conversation Memory (对话历史, 24h~30d TTL)", () ->
                 mm.getConversation().getRecent(10).join(), "条目数");
 
-        // 3. Task Memory
-        printMemoryList("📋 Task Memory (任务执行记录)", () ->
-                mm.getTask().getRecentTasks(10).join(), "条目数");
+        // 3. LongTerm (via Index)
+        printMemoryList("🧠 LongTermIndex (LTM + Episodic + Semantic 向量检索)", () ->
+                mm.getIndex().query("", 10).join().items(), "结果数");
 
-        // 4. LongTerm Memory
-        printMemoryList("🧠 LongTerm Memory (长期知识)", () ->
-                mm.getLongTerm().retrieve("", 20, null, null).join(), "条目数");
-
-        // 5. Episodic Memory
-        printMemoryList("🎬 Episodic Memory (过往经验)", () ->
+        // 4. Episodic Memory
+        printMemoryList("🎬 Episodic Memory (完整事件经验)", () ->
                 mm.getEpisodic().recallSimilar("", 10).join(), "条目数");
 
-        // 6. Semantic Memory
-        System.out.println("\n🔗 Semantic Memory (知识图谱概念):");
+        // 5. Semantic Memory
+        System.out.println("\n🔗 Semantic Memory (知识图谱):");
         try {
             var graph = mm.getSemantic().queryGraph("", 1).join();
             var nodes = (java.util.List<?>) graph.getOrDefault("nodes", java.util.List.of());
             var edges = (java.util.List<?>) graph.getOrDefault("edges", java.util.List.of());
             System.out.println("  概念数: " + nodes.size() + "  |  关系数: " + edges.size());
-            for (var n : nodes) {
-                if (n instanceof java.util.Map<?, ?> m) {
-                    System.out.println("    • " + m.get("name") + " (" + m.get("type") + ")");
-                }
-            }
         } catch (Exception e) {
             System.out.println("  ⚠️ " + e.getMessage());
         }
 
-        // 7. Procedural Memory
-        printMemoryList("⚙️ Procedural Memory (学习的工作流程)", () ->
-                mm.getProcedural().retrieve("", null, 10).join(), "条目数");
+        // 6. Learned Behavior Memory
+        printMemoryList("⚙️ Learned Behavior (工作流程 + 工具经验 + 反思)", () ->
+                mm.getLearnedBehavior().retrieveAll("", 10).join(), "条目数");
 
-        // 8. Reflection Memory
-        printMemoryList("🪞 Reflection Memory (自我反思与教训)", () ->
-                mm.getReflection().retrieve("", 10).join(), "条目数");
-
-        // 9. Tool Experience Memory
-        System.out.println("\n🔧 Tool Experience Memory (工具使用经验):");
-        try {
-            var stats = mm.getTool().getToolStats("").join();
-            System.out.println("  工具数(有记录): " + stats.getOrDefault("total_executions", 0));
-        } catch (Exception e) {
-            System.out.println("  ⚠️ " + e.getMessage());
-        }
-
-        // 10. Fact Memory
-        System.out.println("\n📌 Fact Memory (结构化用户事实):");
+        // 7. Fact Memory
+        System.out.println("\n📌 Fact Memory (结构化用户事实, KV+版本化):");
         try {
             var facts = mm.getFact().getAllFacts().join();
             System.out.println("  事实数: " + facts.size());
@@ -388,7 +372,7 @@ public class InteractiveAgent {
         // Database
         var dbFile = new java.io.File("./data/agent.db");
         if (dbFile.exists()) {
-            System.out.println("\n💾 数据库文件: " + dbFile.getAbsolutePath()
+            System.out.println("\n💾 数据库: " + dbFile.getAbsolutePath()
                     + " (" + (dbFile.length() / 1024) + " KB)");
         }
         System.out.println("=".repeat(60));

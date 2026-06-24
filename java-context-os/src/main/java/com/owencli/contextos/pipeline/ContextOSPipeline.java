@@ -124,6 +124,9 @@ public class ContextOSPipeline {
     private final MemoryUpdater memoryUpdater;
     private final ReflectionEngine reflectionEngine;
 
+    // Behavior Pipeline (last layer — detects patterns across episodes)
+    private final com.owencli.contextos.behavior.BehaviorPipeline behaviorPipeline;
+
     // Runtime
     private final ContextRuntime runtime;
 
@@ -161,26 +164,24 @@ public class ContextOSPipeline {
         this.conversationCollector = new ConversationCollector();
         this.environmentCollector = new EnvironmentCollector();
 
-        // Memory — all 10 subsystems (including Fact)
+        // Memory — 7 subsystems + LongTermIndex
         var embeddingConfig = new ContextOsProperties.Embedding();
         var embeddingFactory = new EmbeddingServiceFactory(embeddingConfig);
         var embeddingService = embeddingFactory.create();
         var workingMemory = new WorkingMemory();
         var conversationMemory = new ConversationMemory(this.sessionId, this.store);
-        var taskMemory = new TaskMemory(this.store, this.userId);
         var longTermMemory = new LongTermMemory(this.store, this.userId, embeddingService);
         var episodicMemory = new EpisodicMemory(this.store, this.userId);
         var semanticMemory = new SemanticMemory(this.store, this.userId);
-        var proceduralMemory = new ProceduralMemory(this.store, this.userId);
-        var toolExperienceMemory = new ToolExperienceMemory(this.store, this.userId);
-        var reflectionMemory = new ReflectionMemory(this.store, this.userId);
+        var learnedBehaviorMemory = new LearnedBehaviorMemory(this.store, this.userId);
         var factMemory = new FactMemory(this.store, this.userId);
+        var longTermIndex = new LongTermIndex(longTermMemory, episodicMemory, semanticMemory);
 
         this.memoryManager = new MemoryManager(
-                workingMemory, conversationMemory, taskMemory,
-                longTermMemory, episodicMemory, semanticMemory,
-                proceduralMemory, toolExperienceMemory, reflectionMemory,
-                factMemory
+                workingMemory, conversationMemory,
+                episodicMemory, semanticMemory,
+                factMemory, learnedBehaviorMemory,
+                longTermMemory, longTermIndex
         );
 
         // Builder
@@ -204,12 +205,15 @@ public class ContextOSPipeline {
         this.evaluator = new QualityEvaluator(llmClient);
         this.tracer = new Tracer();
         this.memoryUpdater = new MemoryUpdater(
-                workingMemory, conversationMemory, taskMemory,
+                workingMemory, conversationMemory, learnedBehaviorMemory,
                 longTermMemory, episodicMemory, semanticMemory,
                 llmClient, factMemory, embeddingService,
-                runtime.getTaskGraph(), false  // useLlmScoring=false by default
+                runtime.getTaskGraph(), false
         );
-        this.reflectionEngine = new ReflectionEngine(reflectionMemory, llmClient);
+        this.reflectionEngine = new ReflectionEngine(learnedBehaviorMemory, llmClient);
+
+        // Behavior Pipeline (learned patterns from episodes)
+        this.behaviorPipeline = new com.owencli.contextos.behavior.BehaviorPipeline(learnedBehaviorMemory);
 
         // Lifecycle & Evolution
         this.memoryLifecycle = new MemoryLifecycle(store);
@@ -220,8 +224,8 @@ public class ContextOSPipeline {
 
         log.info("ContextOSPipeline v2.0 initialized: session={}, user={}, provider={}",
                 this.sessionId, this.userId, this.provider.getValue());
-        log.info("Memory subsystems: working, conversation, task, long-term, episodic, semantic, procedural, tool, reflection, fact");
-        log.info("Runtime: state, taskGraph, observation, checkpoint, retry");
+        log.info("Memory subsystems: working, conversation, episodic, semantic, fact, learned_behavior, long_term");
+        log.info("LongTermIndex: global vector retrieval layer (LTM + Episodic + Semantic)");
         log.info("Lifecycle: archive={}d, forget={}d", 30, 90);
     }
 
@@ -265,9 +269,9 @@ public class ContextOSPipeline {
                             policyDirective.isSkipKnowledge(),
                             policyDirective.isSkipTools());
 
-                    // ── Step 2: Context Building (with Retrieval Planner) ──
+                    // ── Step 2: Context Building (with Retrieval Planner + Policy Directive) ──
                     var s2 = tracer.stepBegin("context_building");
-                    return builder.build(task).thenCompose(unified -> {
+                    return builder.build(task, policyDirective).thenCompose(unified -> {
                         tracer.stepEnd(s2, task.getId(), "memory=" + unified.getMemory().size());
                         log.info("Step 2 (上下文构建): memory={}, knowledge={}", unified.getMemory().size(), unified.getKnowledge().size());
 
@@ -329,7 +333,17 @@ public class ContextOSPipeline {
                                                                                 if (count > 0) log.info("LTM consolidate: removed {} duplicates", count);
                                                                             });
                                                                 })
-                                                                .thenApply(ignored3 -> {
+                                                                .thenCompose(ignored3 -> {
+                                                                    // ── Step 9: Behavior Detection ──
+                                                                    // Analyze episode for pattern learning (last layer of pipeline)
+                                                                    var episode = new com.owencli.contextos.core.model.EpisodeInfo();
+                                                                    episode.setIntent(task.getIntent().getValue());
+                                                                    episode.setUserInput(task.getRawInput());
+                                                                    episode.setResponse(responseStr);
+                                                                    episode.setSuccess(metrics.isSuccess());
+                                                                    return behaviorPipeline.processEpisode(episode);
+                                                                })
+                                                                .thenApply(behaviorsLearned -> {
                                                                     tracer.finish(metrics.isSuccess());
 
                                                                     double totalLatency = (System.currentTimeMillis() - pipelineStart);
@@ -342,6 +356,7 @@ public class ContextOSPipeline {
                                                                     result.put("trace_id", tracerId);
                                                                     result.put("task_spec", task);
                                                                     result.put("memory_update", memResult);
+                                                                    result.put("behaviors_learned", behaviorsLearned);
                                                                     result.put("latency_ms", Math.round(totalLatency * 10.0) / 10.0);
                                                                     result.put("unified_context", unified);
                                                                     result.put("optimized_context", optimized);

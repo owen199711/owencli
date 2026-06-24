@@ -21,7 +21,7 @@ public class MockClient implements BaseLLMClient {
             log.debug("MockClient received prompt ({} chars)", prompt.length());
             String response = "[模拟回复] 已收到您的请求，内容长度 " + prompt.length() + " 字符。";
             if ("json".equals(responseFormat)) {
-                return "{\"response\": \"模拟回复\", \"length\": " + prompt.length() + "}";
+                return "[]";
             }
             return response;
         });

@@ -3,14 +3,11 @@ package com.owencli.contextos.core.model;
 public enum MemoryType {
     WORKING("working"),
     CONVERSATION("conversation"),
-    TASK("task"),
-    LONG_TERM("long_term"),
     EPISODIC("episodic"),
     SEMANTIC("semantic"),
-    PROCEDURAL("procedural"),
-    TOOL_EXPERIENCE("tool_experience"),
-    REFLECTION("reflection"),
-    FACT("fact");
+    FACT("fact"),
+    LEARNED_BEHAVIOR("learned_behavior"),
+    LONG_TERM("long_term");
 
     private final String value;
 

@@ -1,0 +1,244 @@
+{
+  "dataset" : "longmemeval_oracle",
+  "num_instances" : 20,
+  "duration_minutes" : 1.5,
+  "llm" : "DeepSeekClient",
+  "by_type" : {
+    "temporal-reasoning" : {
+      "count" : 20,
+      "acc_simple" : 0.0,
+      "acc_memory" : 0.0,
+      "f1_simple" : 0.0,
+      "f1_memory" : 0.0
+    }
+  },
+  "overall" : {
+    "acc_simple" : 0.0,
+    "acc_memory" : 0.0,
+    "f1_simple" : 0.0,
+    "f1_memory" : 0.0,
+    "delta_acc" : 0.0,
+    "delta_f1" : 0.0
+  },
+  "details" : [ {
+    "question_id" : "gpt4_2655b836",
+    "question_type" : "temporal-reasoning",
+    "question" : "What was the first issue I had with my new car after its first service?",
+    "answer" : "GPS system not functioning correctly",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_2487a7cb",
+    "question_type" : "temporal-reasoning",
+    "question" : "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using",
+    "answer" : "'Data Analysis using Python' webinar",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_76048e76",
+    "question_type" : "temporal-reasoning",
+    "question" : "Which vehicle did I take care of first in February, the bike or the car?",
+    "answer" : "bike",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_2312f94c",
+    "question_type" : "temporal-reasoning",
+    "question" : "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?",
+    "answer" : "Samsung Galaxy S22",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "0bb5a684",
+    "question_type" : "temporal-reasoning",
+    "question" : "How many days before the team meeting I was preparing for did I attend the workshop on 'Effective Co",
+    "answer" : "7 days. 8 days (including the last day) is also acceptable.",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "08f4fc43",
+    "question_type" : "temporal-reasoning",
+    "question" : "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service ",
+    "answer" : "30 days. 31 days (including the last day) is also acceptable.",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "2c63a862",
+    "question_type" : "temporal-reasoning",
+    "question" : "How many days did it take for me to find a house I loved after starting to work with Rachel?",
+    "answer" : "14 days. 15 days (including the last day) is also acceptable.",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_385a5000",
+    "question_type" : "temporal-reasoning",
+    "question" : "Which seeds were started first, the tomatoes or the marigolds?",
+    "answer" : "Tomatoes",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "2a1811e2",
+    "question_type" : "temporal-reasoning",
+    "question" : "How many days had passed between the Hindu festival of Holi and the Sunday mass at St. Mary's Church",
+    "answer" : "21 days. 22 days (including the last day) is also acceptable.",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "bbf86515",
+    "question_type" : "temporal-reasoning",
+    "question" : "How many days before the 'Rack Fest' did I participate in the 'Turbocharged Tuesdays' event?",
+    "answer" : "4 days.",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_5dcc0aab",
+    "question_type" : "temporal-reasoning",
+    "question" : "Which pair of shoes did I clean last month?",
+    "answer" : "white Adidas sneakers",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_0b2f1d21",
+    "question_type" : "temporal-reasoning",
+    "question" : "Which event happened first, the purchase of the coffee maker or the malfunction of the stand mixer?",
+    "answer" : "The malfunction of the stand mixer",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "f0853d11",
+    "question_type" : "temporal-reasoning",
+    "question" : "How many days had passed between the 'Walk for Hunger' event and the 'Coastal Cleanup' event?",
+    "answer" : "14 days. 8 days (including the last day) is also acceptable.",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_6ed717ea",
+    "question_type" : "temporal-reasoning",
+    "question" : "Which item did I purchase first, the dog bed for Max or the training pads for Luna?",
+    "answer" : "Training pads for Luna",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_70e84552",
+    "question_type" : "temporal-reasoning",
+    "question" : "Which task did I complete first, fixing the fence or trimming the goats' hooves?",
+    "answer" : "Fixing the fence",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "a3838d2b",
+    "question_type" : "temporal-reasoning",
+    "question" : "How many charity events did I participate in before the 'Run for the Cure' event?",
+    "answer" : "4",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_93159ced",
+    "question_type" : "temporal-reasoning",
+    "question" : "How long have I been working before I started my current job at NovaTech?",
+    "answer" : "4 years and 9 months",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_2d58bcd6",
+    "question_type" : "temporal-reasoning",
+    "question" : "Which book did I finish reading first, 'The Hate U Give' or 'The Nightingale'?",
+    "answer" : "'The Hate U Give'",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "gpt4_65aabe59",
+    "question_type" : "temporal-reasoning",
+    "question" : "Which device did I set up first, the smart thermostat or the mesh network system?",
+    "answer" : "Smart thermostat",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  }, {
+    "question_id" : "982b5123",
+    "question_type" : "temporal-reasoning",
+    "question" : "How many months ago did I book the Airbnb in San Francisco?",
+    "answer" : "Five months ago",
+    "hypothesis_simple" : "",
+    "hypothesis_memory" : "[ERROR] java.lang.UnsupportedOperationException",
+    "score_a" : 0.0,
+    "score_b" : 0.0,
+    "correct_a" : false,
+    "correct_b" : false
+  } ]
+}

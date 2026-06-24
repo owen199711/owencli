@@ -1,0 +1,218 @@
+{
+  "dataset" : "MemoryOS-Bench v1.0",
+  "num_instances" : 20,
+  "duration_seconds" : 1.2,
+  "llm" : "DeepSeekClient",
+  "by_type" : {
+    "episodic" : {
+      "total" : 20,
+      "accuracy" : 0.0,
+      "write_accuracy" : 0.0,
+      "avg_score" : 0.0,
+      "avg_retrieval_recall" : 0.0,
+      "avg_retrieved_count" : 0.0,
+      "avg_latency_ms" : 0.0
+    }
+  },
+  "details" : [ {
+    "case_id" : "episode_001",
+    "type" : "episodic",
+    "sub_type" : "success",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_002",
+    "type" : "episodic",
+    "sub_type" : "success",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_003",
+    "type" : "episodic",
+    "sub_type" : "success",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_004",
+    "type" : "episodic",
+    "sub_type" : "success",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_005",
+    "type" : "episodic",
+    "sub_type" : "failure",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_006",
+    "type" : "episodic",
+    "sub_type" : "failure",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_007",
+    "type" : "episodic",
+    "sub_type" : "failure",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_008",
+    "type" : "episodic",
+    "sub_type" : "failure",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_009",
+    "type" : "episodic",
+    "sub_type" : "failure",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_010",
+    "type" : "episodic",
+    "sub_type" : "success",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_011",
+    "type" : "episodic",
+    "sub_type" : "success",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_012",
+    "type" : "episodic",
+    "sub_type" : "success",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_013",
+    "type" : "episodic",
+    "sub_type" : "success",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_014",
+    "type" : "episodic",
+    "sub_type" : "success",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_015",
+    "type" : "episodic",
+    "sub_type" : "failure",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_016",
+    "type" : "episodic",
+    "sub_type" : "failure",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_017",
+    "type" : "episodic",
+    "sub_type" : "failure",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_018",
+    "type" : "episodic",
+    "sub_type" : "failure",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_019",
+    "type" : "episodic",
+    "sub_type" : "failure",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  }, {
+    "case_id" : "episode_020",
+    "type" : "episodic",
+    "sub_type" : "success",
+    "correct" : false,
+    "score" : 0.0,
+    "write_correct" : false,
+    "retrieval_recall" : 0.0,
+    "retrieved_count" : 0,
+    "elapsed_ms" : 0
+  } ]
+}

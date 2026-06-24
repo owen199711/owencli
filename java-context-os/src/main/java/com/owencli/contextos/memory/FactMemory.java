@@ -96,17 +96,49 @@ public class FactMemory {
     }
 
     /**
-     * Retrieve all facts relevant to a query (for context building).
+     * Retrieve facts relevant to a query (for context building).
+     * <p>
+     * Only facts whose type or value matches the query keywords are returned.
+     * The unconditional "user.*" catch-all has been removed — facts must now
+     * pass a keyword relevance check to avoid injecting irrelevant personal
+     * data (e.g. user.name=张三) into unrelated tasks like "写 K8s Deployment".
      */
     public CompletableFuture<List<FactRecord>> retrieve(String query, int topK) {
-        // Facts are structured KV — we match by type keywords
         String q = query.toLowerCase();
-        return getAllFacts().thenApply(facts -> facts.stream()
-                .filter(f -> f.getType().toLowerCase().contains(q)
-                        || f.getCurrentValue().toLowerCase().contains(q)
-                        || f.getType().contains("user."))  // always include user facts
-                .limit(topK)
-                .collect(Collectors.toList()));
+        return getAllFacts().thenApply(facts -> {
+            var scored = facts.stream()
+                    .filter(f -> f.getType().toLowerCase().contains(q)
+                            || f.getCurrentValue().toLowerCase().contains(q))
+                    .map(f -> {
+                        // Compute keyword overlap score for ranking
+                        double score = computeKeywordOverlap(q, f);
+                        // Use the higher of keyword overlap or stored confidence
+                        // as the effective relevance signal
+                        return new AbstractMap.SimpleEntry<>(f, score);
+                    })
+                    .sorted(Map.Entry.<FactRecord, Double>comparingByValue().reversed())
+                    .limit(topK)
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toList());
+            log.debug("FactMemory.retrieve: query='{}', matched={}/{}", q, scored.size(), facts.size());
+            return scored;
+        });
+    }
+
+    /**
+     * Compute keyword overlap between the query and a fact's type + value.
+     * Returns a value in [0, 1] where 1.0 means the query fully matches.
+     */
+    private double computeKeywordOverlap(String query, FactRecord fact) {
+        if (query == null || query.isBlank()) return 0.0;
+        String text = (fact.getType() + " " + fact.getCurrentValue()).toLowerCase();
+        String[] queryTokens = query.trim().split("\\s+");
+        if (queryTokens.length == 0) return 0.0;
+        long matchCount = java.util.Arrays.stream(queryTokens)
+                .filter(token -> token.length() >= 2 && text.contains(token))
+                .count();
+        // Base confidence + keyword bonus, capped at 1.0
+        return Math.min(1.0, fact.getConfidence() * 0.5 + (double) matchCount / queryTokens.length * 0.5);
     }
 
     /**

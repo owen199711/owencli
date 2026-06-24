@@ -91,16 +91,17 @@ public class MemoryExtractionEngine {
                     log.debug("LLM extractor found no facts");
                     return CompletableFuture.completedFuture(0);
                 }
-                return processCandidates(llmCandidates);
+                return processCandidates(llmCandidates, input);
             });
         }
 
-        return processCandidates(candidates);
+        return processCandidates(candidates, input);
     }
 
-    private CompletableFuture<Integer> processCandidates(List<RuleFactExtractor.CandidateFact> candidates) {
-        // Step 3: Validate
-        var validated = validator.validate(candidates);
+    private CompletableFuture<Integer> processCandidates(List<RuleFactExtractor.CandidateFact> candidates,
+                                                          String input) {
+        // Step 3: Validate with signal detection (correction/reinforcement)
+        var validated = validator.validate(candidates, input);
         if (validated.isEmpty()) {
             return CompletableFuture.completedFuture(0);
         }
