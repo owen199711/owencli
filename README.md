@@ -1,3 +1,212 @@
+# Context-OS 记忆系统架构
+
+## 一、整体架构总览
+
+Context-OS 采用类似人脑认知科学设计，7+1 记忆子系统架构，包含：
+
+```
+                    Memory Manager (统一门面)
+                          │
+        ┌──────────────────┼──────────────────┐
+        │              │                  │
+        ▼              ▼                  ▼
+   Working Memory    Long-Term Index
+                              │
+                              └── 融合检索
+        ├──────────────────────────────────┤
+        │
+        ▼              ▼                  ▼
+   Conversation     Episodic       Semantic
+   Memory       Memory       Memory
+                             │
+        ├──────────────────────────────────┤
+        │
+        ▼              ▼                  ▼
+   Fact        Learned
+   Memory      Behavior     Long-Term
+               Memory       Memory
+```
+
+**生命周期总览：
+
+```
+Understand → Collect → Build → Optimize → Execute → Learn
+```
+
+整个 Context 在系统中不断演化，而不是一次性的 Prompt。
+
+---
+
+## 二、记忆子系统详解
+
+### 1. Working Memory（工作记忆）
+当前会话的即时记忆，用于实时存储本次交互的所有即时上下文。类似于人类的工作记忆，是短期存储容量有限（Token 环形缓冲区，8K Token 上限。
+
+### 2. Conversation Memory（对话记忆）
+当前 Session 的对话历史，带 TTL（默认 24 小时过期，按会话结束后可以选择性归档。
+
+### 3. Episodic Memory（情节记忆）
+按事件/任务级别的长期情节记忆，永久保存，可通过向量召回，记录完整的任务经验。
+
+### 4. Semantic Memory（语义记忆）
+知识图谱（Concept-Relation-Concept），存储结构化的领域知识。
+
+### 5. Fact Memory（事实记忆）
+结构化的键值对（Key-Value）事实存储，支持：
+- 版本化：所有更新历史
+- 冲突检测与解决
+- 置信度管理
+- 状态机管理（Active / Superseded / Archived）
+
+### 6. Learned Behavior Memory（行为记忆）
+用户行为模式，通过多次观察学习固化的用户偏好和行为模式。
+
+### 7. Long-Term Memory（长期记忆）
+通用向量存储，包含所有类型记忆的永久存储，包含：
+- 全文检索
+- 向量相似度检索
+- 时间衰减管理
+
+### 8. Long-Term Index（全局检索层）
+7+1 架构的最后一层，全局检索融合层，同时检索：
+- LTM（权重 0.9
+- Episodic（权重 0.8）
+- Semantic（权重 0.85）
+按融合去重后返回 TopK 结果。
+
+---
+
+## 三、存储架构
+
+所有记忆统一存储在 SQLite 中，按 `type` 字段区分类型：
+
+| 类型 | 表存储方式 | 元数据 |
+|------|-----------|--------|
+| fact | JSON history 字段 | fact_type, current_value, history[] (JSON), confidence, fact_status, source, created_at, updated_at |
+| conversation | 按会话存储 | role, session_id, turn, timestamp |
+| episodic | 独立表 | scene, action, result, feedback, tags[] |
+| semantic | 独立的 nodes/edges 表 | 知识图谱节点与边 |
+| learned_behavior | JSON 行为记录 | behavior_type, behavior_key, confidence, observation_count |
+| archived | 标记 archived=true, 压缩内容 | 归档记忆 |
+
+---
+
+## 四、记忆入库流程
+
+记忆入库的完整流程如下：
+
+```
+用户输入
+   │
+   ▼
+Memory Extraction Engine
+   │
+   ├─ Rule Engine（毫秒级快速路径
+   │   └─ 26+ 条规则直接命中
+   │
+   └─ LLM Extractor（兜底）
+   │
+   ▼
+Fact Validator → 校验
+   │
+   ▼
+Conflict Checker → 与已有事实比较
+   │
+   ▼
+Fact Updater → Fact Memory
+   │
+   ├─ type 已存在 → UPDATE（保留历史版本）
+   └─ type 不存在 → CREATE
+```
+
+**记忆入库决策：重要性评分引擎（RuleScorer / SemanticScorer / NoveltyScorer / GoalRelationScorer）决定存储到哪一层。
+
+---
+
+## 五、记忆更新机制
+
+### 5.1 Fact 记忆更新
+- 支持增量式更新：保留历史版本链
+- 冲突检测：识别矛盾事实提醒
+- 置信度衰减：长时间未访问的事实自动衰减
+
+### 5.2 其他记忆更新
+- Conversation：持续追加对话
+- Episodic：记录事件
+- Semantic：知识图谱演化
+- LearnedBehavior：多次观察后合并
+
+### 5.3 知识进化
+Knowledge Evolution 模块负责知识图谱的长期演化。
+
+---
+
+## 六、记忆遗忘生命周期
+
+```
+      新增
+        │
+        │
+   ┌───┴────┐
+   │        │
+   │  30 天 │
+   │        │
+   │   归档  │
+   │        │
+   └───┬────┘
+        │
+        │
+   ┌───┴────┐
+   │        │
+   │  90 天 │
+   │        │
+   │  永久  │
+   │  删除  │
+   └────────┘
+```
+
+**生命周期规则：**
+- **30 天**：未被访问的记忆自动归档，内容压缩为 "[Archived] 前 60 字符
+- **90 天**：未被访问的记忆永久删除，不可恢复
+
+**后台任务：`MemoryLifecycle.runMaintenance() 每小时执行一次维护。
+
+---
+
+## 七、记忆检索流程
+
+```
+用户查询
+   │
+   ▼
+Retrieval Planner（按意图调整各源权重）
+   │
+   ▼
+Long-Term Index
+   │
+   ├─ 并行检索 LTM / Episodic / Semantic
+   │
+   ▼
+Relevance Ranking（相关性排序
+   │
+   ▼
+Token Budget Allocation（Token 预算分配）
+   │
+   ▼
+返回 TopK 结果
+```
+
+**检索策略：**
+- 闲聊类：少记忆，多对话
+- 知识类：多记忆（LTM+Semantic），少对话
+- 操作类：多工具，少记忆
+
+---
+
+## 八、与 Pipeline 集成位置
+
+记忆系统是整个 Context-OS 中的完整集成：
+
 ```
                 User Request
                      │
@@ -31,505 +240,28 @@
                      └───────────────► Memory Update
 ```
 
-**生命周期总览：**
+---
 
-```
-Understand → Collect → Build → Optimize → Execute → Learn
-```
+## 九、评测基准
 
-整个 Context 在系统中不断演化，而不是一次性的 Prompt。
+- MemoryOS-Bench 自定义评测体系覆盖：
+- fact：事实提取准确性
+- conversation：对话历史检索
+- episodic：情节记忆召回
+- semantic：知识图谱查询
+- behavior：行为模式学习
+- noise：噪声抗干扰
+
+已接入学术基准 LongMemEval。
 
 ---
 
-## ① Intent Understanding（意图理解）
-
-将用户自然语言转换成系统能够理解的任务描述（Task）。
-
-### 输入示例
-
-```
-User:
-帮我分析 Kubernetes 集群为什么一直 CrashLoopBackOff
-```
-
-### 输出示例
-
-```yaml
-Intent:
-    Diagnose Kubernetes Failure
-
-Goal:
-    Root Cause Analysis
-
-Task Type:
-    Troubleshooting
-
-Domain:
-    Kubernetes
-
-Need Tool:
-    - kubectl
-    - Prometheus
-    - MCP
-
-Need Knowledge:
-    - K8s Docs
-
-Priority:
-    High
-```
-
-### 核心能力
-
-
-| 能力                      | 说明                                                                                         |
-| ------------------------- | -------------------------------------------------------------------------------------------- |
-| **Intent Classification** | 识别任务类型：QA / Coding / Planning / Debugging / Search / Workflow / Agent / Data Analysis |
-| **Entity Extraction**     | 提取实体：Cluster / Namespace / Pod / Deployment / Node                                      |
-| **Parameter Extraction**  | 提取参数：`namespace=prod` `pod=nginx` `cluster=test` `time=1h`                              |
-| **Goal Understanding**    | 明确真正目标：Fix / Explain / Generate / Summarize / Compare                                 |
-
-### 输出
-
-```typescript
-interface TaskSpec {
-  intent: string;
-  goal: string;
-  entity: Entity[];
-  constraint: Constraint;
-  priority: number;
-  toolRequirement: ToolRequirement[];
-  knowledgeRequirement: KnowledgeRequirement[];
-}
-```
-
----
-
-## ② Context Orchestrator（上下文编排）
-
-整个系统的大脑。决定需要哪些 Context，而不是全部拿出来。
-
-### 职责
-
-- **Route Context** — 路由到正确的 Context 源
-- **Select Context** — 只选择当前任务需要的 Context
-- **Prioritize Context** — 按优先级排序
-- **Merge Context** — 合并多个 Context 源
-
-### 示例
-
-```
-Task: Debug Kubernetes
-  │
-  Need:
-  ├── Identity Context
-  ├── Conversation Context
-  ├── Environment Context
-  ├── Memory
-  ├── Knowledge
-  └── Tools
-
-Task: Write Email
-  │
-  Skip:
-  └── Environment Context  ← 不需要
-```
-
-**核心思想：Dynamic Context Selection**
-
----
-
-## ③ Context Collection（上下文收集）
-
-### Identity Context
-
-提供"用户是谁"的信息。
-
-```yaml
-User Profile:
-  Role: Platform Engineer
-  Permission: Cluster Admin
-  Language: Chinese
-  Skill Level: Advanced
-
-Organization:
-  Tenant: acme-corp
-  Team: platform-engineering
-```
-
-### Conversation Context
-
-当前任务的状态与历史。
-
-```yaml
-History:
-  - Turn 1: "检查集群状态"
-  - Turn 2: "查看 CrashLoopBackOff pod"
-
-Current:
-  Topic: Kubernetes Failure
-  Step: 4/10
-  Status: Waiting MCP Result
-
-Task Graph:
-  - Analyze Pod Status
-  - Check Resource Limits
-  - Inspect Logs
-  - Verify Network Policy
-```
-
-### Environment Context
-
-描述系统运行环境。这是传统 Prompt 没有的部分。
-
-```yaml
-Cluster: dev
-Namespace: agent-system
-Current Workspace: /projects/owencli
-Git Branch: feature/context
-Runtime:
-  OS: Linux
-  CPU: x86_64
-  Memory: 16GB
-MCP Server: localhost:8080
-```
-
----
-
-## ④ Context Builder
-
-真正构建 Prompt 的地方，但不是简单拼接。
-
-### 核心流程
-
-```
-Builder
-├── Merge        — 合并多个 Context 源
-├── Normalize    — 统一格式
-├── Deduplicate  — 去重
-├── Validate     — 校验完整性
-└── Transform    — 格式转换
-```
-
-### 三大输入来源
-
-#### Memory（长期记忆）
-
-```yaml
-User Memory:
-  - 用户一直在开发 Agent
-  - 喜欢 Mermaid 图表
-  - 使用 Kubernetes
-
-Task Memory:
-  - 上次调试过 K8s 网络问题
-  - 使用了 Prometheus 查询
-
-Semantic Memory:
-  - Kubernetes 故障排查方法论
-
-Episode Memory:
-  - 2026-06-17: 排查 CrashLoopBackOff → 定位为 OOMKill
-```
-
-#### Knowledge（外部知识）
-
-```yaml
-Sources:
-  - Vector DB (RAG)
-  - Document / Wiki
-  - API Docs
-  - Code Base
-
-Retrieval:
-  TopK: 5
-  Chunk Size: 512
-  Merge Strategy: concat
-```
-
-#### Tool Context（工具上下文）
-
-```yaml
-MCP:
-  - kubectl
-    Args: ["get", "pods"]
-    Permission: readonly
-    Current Cluster: dev
-
-  - Prometheus
-    Query: "container_memory_usage_bytes"
-    Time Range: "1h"
-```
-
-### 最终输出
-
-```typescript
-interface UnifiedContext {
-  identity: IdentityContext;
-  conversation: ConversationContext;
-  environment: EnvironmentContext;
-  memory: MemoryContext;
-  knowledge: KnowledgeContext[];
-  tools: ToolContext[];
-}
-```
-
----
-
-## ⑤ Context Optimizer
-
-Context Engineering **最重要**的一层。LLM 最大瓶颈是 Token，所以必须优化。
-
-### Compression（压缩）
-
-
-| 方法                     | 说明                     |
-| ------------------------ | ------------------------ |
-| **Summary**              | 直接摘要                 |
-| **Hierarchy Summary**    | 分层摘要                 |
-| **Recursive Summary**    | 递归摘要                 |
-| **Semantic Compression** | 语义压缩（保留关键信息） |
-
-### Ranking（排序）
-
-```typescript
-interface RankingScore {
-  taskRelevance: number;      // 与当前任务的相关性
-  timeRelevance: number;      // 时间衰减
-  semanticSimilarity: number; // 语义相似度
-  priority: number;           // 显式优先级
-}
-
-// Top Context = TopK by combined score
-```
-
-### Token Budget（预算控制）
-
-根据不同模型能力自动分配 Token 比例：
-
-
-| 模块        | 占比 |
-| ----------- | ---- |
-| History     | 20%  |
-| Memory      | 10%  |
-| Knowledge   | 45%  |
-| Tool        | 15%  |
-| Instruction | 10%  |
-
-支持模型：128K / 64K / 32K 自动适配。
-
-### 输出
-
-```typescript
-interface OptimizedContext {
-  compressed: boolean;
-  tokenUsage: TokenBudget;
-  context: UnifiedContext;  // 精简后
-}
-```
-
----
-
-## ⑥ Context Packager
-
-Builder 得到的是 **Object**，LLM 不能直接理解，需要包装成 LLM 可读的格式。
-
-### 包装格式
-
-```
-system:
-    [系统指令]
-
-memory:
-    [记忆信息]
-
-knowledge:
-    [知识信息]
-
-tools:
-    [工具定义]
-
-conversation:
-    [对话历史]
-```
-
-支持多种序列化格式：
-
-- JSON
-- XML
-- Markdown
-- Prompt Template
-
-### 模型适配
-
-这一层完全与模型解耦，不同模型拥有自己的 **Prompt Adapter**：
-
-```
-GPT      → JSON-based Adapter
-Claude   → XML-based Adapter
-Gemini   → Markdown-based Adapter
-Qwen     → ChatML-based Adapter
-DeepSeek → Custom Adapter
-```
-
----
-
-## ⑦ LLM Inference
-
-模型真正开始推理。
-
-### 推理能力
-
-- **Reasoning** — 链式推理
-- **Planning** — 任务规划
-- **Tool Calling** — 工具调用
-- **Function Calling** — 函数调用
-- **Multi-Agent Planning** — 多 Agent 协作
-- **Code Generation** — 代码生成
-
-这一层只负责 **Thinking**，不会管理 Context。
-
----
-
-## ⑧ Context Feedback
-
-这一层决定系统是否越来越聪明。
-
-### Memory Update
-
-更新长期记忆：
-
-```yaml
-Write to Long Memory:
-  - 新的用户偏好
-  - 新的任务经验
-  - 新的事实
-```
-
-### Evaluation
-
-```yaml
-Metrics:
-  Answer Quality: 0.92
-  Hallucination Score: 0.03
-  Tool Accuracy: 0.98
-  Latency: 2.3s
-  Cost: $0.04
-  Success Rate: 95%
-
-Reward Score: 0.94  # 用于后续优化
-```
-
-### Trace
-
-完整记录所有执行信息：
-
-```
-Trace
-├── Prompt (原始 + 优化后)
-├── Context (所有输入源)
-├── Tool Calls (调用链)
-├── Latency (每步耗时)
-├── Token (消耗量)
-├── Reasoning (推理过程)
-├── Memory (使用/更新)
-└── Knowledge (检索记录)
-```
-
-集成可观测性工具：
-
-- LangSmith
-- OpenTelemetry
-- Phoenix
-- Arize
-
-用于：**Debug / Replay / Evaluation / Fine-tuning**
-
----
-
-## 整体执行流程（End-to-End Flow）
-
-```
-User
- │
- ▼
-Intent Understanding
- │
- ├─ Intent Classification
- ├─ Goal Recognition
- ├─ Entity Extraction
- └─ Task Specification
- │
- ▼
-Context Orchestrator
- │
- ├─ Select Identity Context
- ├─ Select Conversation Context
- ├─ Select Environment Context
- ├─ Select Memory
- ├─ Select Knowledge
- └─ Select Tool Context
- │
- ▼
-Context Builder
- │
- ├─ Merge
- ├─ Normalize
- ├─ Deduplicate
- ├─ Retrieve RAG
- ├─ Load Memory
- └─ Load MCP Metadata
- │
- ▼
-Context Optimizer
- │
- ├─ Rank
- ├─ Compress
- ├─ Token Budget Allocation
- └─ Relevance Filtering
- │
- ▼
-Context Packager
- │
- ├─ System Prompt
- ├─ Memory Section
- ├─ Knowledge Section
- ├─ Tool Section
- └─ Conversation Section
- │
- ▼
-LLM
- │
- ├─ Reasoning
- ├─ Planning
- ├─ Tool Calling
- └─ Response Generation
- │
- ▼
-Execution & Feedback
- │
- ├─ Update Memory
- ├─ Evaluate Quality
- ├─ Store Trace
- └─ Optimize Future Context
-```
-
----
-
-## 技术选型建议
-
-
-| 模块       | 推荐技术                  | 备选             |
-| ---------- | ------------------------- | ---------------- |
-| 核心语言   | Python                    | Rust / Go        |
-| LLM 调用   | Anthropic SDK             | 自研 LLM Gateway |
-| 向量数据库 | Chroma / Qdrant           | Milvus / FAISS   |
-| 关系数据库 | PostgreSQL                | MySQL            |
-| 知识图谱   | Neo4j                    | Memgraph         |
-| 序列化     | MessagePack / JSON        | Protobuf         |
-| 缓存       | Redis                     | Memcached        |
-| 任务队列   | BullMQ / Celery           | RabbitMQ         |
-| 可观测性   | OpenTelemetry + LangSmith | Phoenix / Arize  |
+## 十、技术栈
+
+- 核心语言：Java
+- LLM 调用：DeepSeek / OpenAI / Claude 兼容
+- 向量数据库：SQLite + Embedding Service
+- 知识图谱：内嵌图结构（SemanticMemory）
 
 ---
 
@@ -537,24 +269,25 @@ Execution & Feedback
 
 ### Phase 1 — 基础 Pipeline
 
-- [ ]  Intent Understanding 引擎
-- [ ]  Context Orchestrator 动态选择
-- [ ]  基础 Context Collection（Identity + Conversation）
+- [x]  Intent Understanding 引擎
+- [x]  Context Orchestrator 动态选择
+- [x]  基础 Context Collection（Identity + Conversation）
+- [x]  7 记忆子系统完整实现
 
 ### Phase 2 — 智能 Context 管理
 
-- [ ]  Context Builder 完整实现
-- [ ]  Context Optimizer（压缩 + 排序 + Token Budget）
-- [ ]  Context Packager 多模型适配
+- [x]  Context Builder 完整实现
+- [x]  Context Optimizer（压缩 + 排序 + Token Budget）
+- [x]  Context Packager 多模型适配
 
 ### Phase 3 — 记忆与知识
 
-- [ ]  Memory 长期记忆持久化
+- [x]  Memory 长期记忆持久化
+- [x]  知识图谱实现
 - [ ]  RAG Knowledge 集成
-- [ ]  Tool Context（MCP 协议）
 
 ### Phase 4 — 学习与进化
 
-- [ ]  Context Feedback 自动评估
+- [x]  MemoryLifecycle 30/90 天遗忘机制
 - [ ]  Trace & Replay 系统
 - [ ]  基于反馈的 Context 自优化
