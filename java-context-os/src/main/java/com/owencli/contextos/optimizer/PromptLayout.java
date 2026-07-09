@@ -38,7 +38,8 @@ public class PromptLayout {
         if (ctx.getMemory() != null && !ctx.getMemory().isEmpty()) {
             var memBuilder = new StringBuilder("Relevant Memory:\n");
             for (var mem : ctx.getMemory()) {
-                memBuilder.append("- [").append(mem.getType().getValue())
+                String typeLabel = mem.getType() != null ? mem.getType().getValue() : "unknown";
+                memBuilder.append("- [").append(typeLabel)
                         .append("] ").append(mem.getContent()).append("\n");
             }
             sections.put("memory", memBuilder.toString());

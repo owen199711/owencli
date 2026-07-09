@@ -1,0 +1,36 @@
+﻿# Context-OS Python 版独立配置
+# ConfigManager 每 30s 检测 mtime 自动热加载
+
+context-os:
+  pipeline:
+    middlewares:
+      - name: intent;   enabled: true;  order: 100
+      - name: build;    enabled: true;  order: 300
+      - name: optimize; enabled: true;  order: 400
+      - name: package;  enabled: true;  order: 500
+      - name: llm;      enabled: true;  order: 600
+      - name: feedback; enabled: true;  order: 700
+
+  llm:
+    provider: deepseek
+    api-key: ${DEEPSEEK_API_KEY:}
+    model: deepseek-chat
+
+  embedding:
+    mode: auto
+
+  memory:
+    working-memory:
+      max-tokens: 32000
+    short-term:
+      ttl-hours: 24
+    long-term:
+      max-items: 1000
+
+  store:
+    provider: sqlite
+    db-path: ./data/context_os.db
+
+  trace:
+    enabled: true
+    storage-dir: ./data/traces

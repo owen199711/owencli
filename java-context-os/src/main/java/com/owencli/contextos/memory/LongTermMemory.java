@@ -1,6 +1,7 @@
 package com.owencli.contextos.memory;
 
 import com.owencli.contextos.core.model.MemoryItem;
+import com.owencli.contextos.core.model.MemoryType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -93,7 +94,7 @@ public class LongTermMemory {
                         memoryType != null ? memoryType : "long_term",
                         null, this.userId, query, keywords, queryEmb, topK, 0))
                 .thenApply(results -> results.stream().map(r -> {
-                    var item = new MemoryItem();
+                    var item = new MemoryItem(MemoryType.LONG_TERM, "");
                     item.setId((String) r.get("id"));
                     item.setContent((String) r.get("content"));
 
