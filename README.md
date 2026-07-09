@@ -1,293 +1,308 @@
-# Context-OS 记忆系统架构
+# Context-OS — AI Agent 上下文管理系统
 
-## 一、整体架构总览
-
-Context-OS 采用类似人脑认知科学设计，7+1 记忆子系统架构，包含：
-
-```
-                    Memory Manager (统一门面)
-                          │
-        ┌──────────────────┼──────────────────┐
-        │              │                  │
-        ▼              ▼                  ▼
-   Working Memory    Long-Term Index
-                              │
-                              └── 融合检索
-        ├──────────────────────────────────┤
-        │
-        ▼              ▼                  ▼
-   Conversation     Episodic       Semantic
-   Memory       Memory       Memory
-                             │
-        ├──────────────────────────────────┤
-        │
-        ▼              ▼                  ▼
-   Fact        Learned
-   Memory      Behavior     Long-Term
-               Memory       Memory
-```
-
-**生命周期总览：
-
-```
-Understand → Collect → Build → Optimize → Execute → Learn
-```
-
-整个 Context 在系统中不断演化，而不是一次性的 Prompt。
+为 AI Agent 设计的上下文管理框架，涵盖意图理解、上下文收集、分层记忆、上下文优化、Prompt 打包、LLM 调用和反馈闭环的全生命周期。
 
 ---
 
-## 二、记忆子系统详解
+## 快速开始
 
-### 1. Working Memory（工作记忆）
-当前会话的即时记忆，用于实时存储本次交互的所有即时上下文。类似于人类的工作记忆，是短期存储容量有限（Token 环形缓冲区，8K Token 上限。
+```bash
+# 1. 设置 API Key
+export DEEPSEEK_API_KEY="your-key"
 
-### 2. Conversation Memory（对话记忆）
-当前 Session 的对话历史，带 TTL（默认 24 小时过期，按会话结束后可以选择性归档。
-
-### 3. Episodic Memory（情节记忆）
-按事件/任务级别的长期情节记忆，永久保存，可通过向量召回，记录完整的任务经验。
-
-### 4. Semantic Memory（语义记忆）
-知识图谱（Concept-Relation-Concept），存储结构化的领域知识。
-
-### 5. Fact Memory（事实记忆）
-结构化的键值对（Key-Value）事实存储，支持：
-- 版本化：所有更新历史
-- 冲突检测与解决
-- 置信度管理
-- 状态机管理（Active / Superseded / Archived）
-
-### 6. Learned Behavior Memory（行为记忆）
-用户行为模式，通过多次观察学习固化的用户偏好和行为模式。
-
-### 7. Long-Term Memory（长期记忆）
-通用向量存储，包含所有类型记忆的永久存储，包含：
-- 全文检索
-- 向量相似度检索
-- 时间衰减管理
-
-### 8. Long-Term Index（全局检索层）
-7+1 架构的最后一层，全局检索融合层，同时检索：
-- LTM（权重 0.9
-- Episodic（权重 0.8）
-- Semantic（权重 0.85）
-按融合去重后返回 TopK 结果。
-
----
-
-## 三、存储架构
-
-所有记忆统一存储在 SQLite 中，按 `type` 字段区分类型：
-
-| 类型 | 表存储方式 | 元数据 |
-|------|-----------|--------|
-| fact | JSON history 字段 | fact_type, current_value, history[] (JSON), confidence, fact_status, source, created_at, updated_at |
-| conversation | 按会话存储 | role, session_id, turn, timestamp |
-| episodic | 独立表 | scene, action, result, feedback, tags[] |
-| semantic | 独立的 nodes/edges 表 | 知识图谱节点与边 |
-| learned_behavior | JSON 行为记录 | behavior_type, behavior_key, confidence, observation_count |
-| archived | 标记 archived=true, 压缩内容 | 归档记忆 |
-
----
-
-## 四、记忆入库流程
-
-记忆入库的完整流程如下：
-
-```
-用户输入
-   │
-   ▼
-Memory Extraction Engine
-   │
-   ├─ Rule Engine（毫秒级快速路径
-   │   └─ 26+ 条规则直接命中
-   │
-   └─ LLM Extractor（兜底）
-   │
-   ▼
-Fact Validator → 校验
-   │
-   ▼
-Conflict Checker → 与已有事实比较
-   │
-   ▼
-Fact Updater → Fact Memory
-   │
-   ├─ type 已存在 → UPDATE（保留历史版本）
-   └─ type 不存在 → CREATE
+# 2. 运行示例
+python examples/basic_pipeline.py
 ```
 
-**记忆入库决策：重要性评分引擎（RuleScorer / SemanticScorer / NoveltyScorer / GoalRelationScorer）决定存储到哪一层。
+```python
+import asyncio
+from context_os.llm.deepseek_client import DeepSeekClient
+from context_os.pipeline import ContextOSPipeline
 
----
+async def main():
+    llm = DeepSeekClient()
+    async with ContextOSPipeline(llm_client=llm, user_id="demo") as pipeline:
+        result = await pipeline.run("Python 列表推导式和生成器有什么区别？")
+        print(result["response"])
 
-## 五、记忆更新机制
-
-### 5.1 Fact 记忆更新
-- 支持增量式更新：保留历史版本链
-- 冲突检测：识别矛盾事实提醒
-- 置信度衰减：长时间未访问的事实自动衰减
-
-### 5.2 其他记忆更新
-- Conversation：持续追加对话
-- Episodic：记录事件
-- Semantic：知识图谱演化
-- LearnedBehavior：多次观察后合并
-
-### 5.3 知识进化
-Knowledge Evolution 模块负责知识图谱的长期演化。
-
----
-
-## 六、记忆遗忘生命周期
-
-```
-      新增
-        │
-        │
-   ┌───┴────┐
-   │        │
-   │  30 天 │
-   │        │
-   │   归档  │
-   │        │
-   └───┬────┘
-        │
-        │
-   ┌───┴────┐
-   │        │
-   │  90 天 │
-   │        │
-   │  永久  │
-   │  删除  │
-   └────────┘
-```
-
-**生命周期规则：**
-- **30 天**：未被访问的记忆自动归档，内容压缩为 "[Archived] 前 60 字符
-- **90 天**：未被访问的记忆永久删除，不可恢复
-
-**后台任务：`MemoryLifecycle.runMaintenance() 每小时执行一次维护。
-
----
-
-## 七、记忆检索流程
-
-```
-用户查询
-   │
-   ▼
-Retrieval Planner（按意图调整各源权重）
-   │
-   ▼
-Long-Term Index
-   │
-   ├─ 并行检索 LTM / Episodic / Semantic
-   │
-   ▼
-Relevance Ranking（相关性排序
-   │
-   ▼
-Token Budget Allocation（Token 预算分配）
-   │
-   ▼
-返回 TopK 结果
-```
-
-**检索策略：**
-- 闲聊类：少记忆，多对话
-- 知识类：多记忆（LTM+Semantic），少对话
-- 操作类：多工具，少记忆
-
----
-
-## 八、与 Pipeline 集成位置
-
-记忆系统是整个 Context-OS 中的完整集成：
-
-```
-                User Request
-                     │
-                     ▼
-          ① Intent Understanding
-                     │
-                     ▼
-          ② Context Orchestrator
-                     │
-                     ▼
-          ③ Context Collection
-                     │
-                     ▼
-           ④ Context Builder
-                     │
-                     ▼
-          ⑤ Context Optimization
-                     │
-                     ▼
-          ⑥ Context Packaging
-                     │
-                     ▼
-                 LLM Inference
-                     │
-                     ▼
-            Tool / Agent Execute
-                     │
-                     ▼
-           ⑦ Context Feedback
-                     │
-                     └───────────────► Memory Update
+asyncio.run(main())
 ```
 
 ---
 
-## 九、评测基准
+## 系统架构
 
-- MemoryOS-Bench 自定义评测体系覆盖：
-- fact：事实提取准确性
-- conversation：对话历史检索
-- episodic：情节记忆召回
-- semantic：知识图谱查询
-- behavior：行为模式学习
-- noise：噪声抗干扰
-
-已接入学术基准 LongMemEval。
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                         Context-OS Pipeline                        │
+│                                                                    │
+│  用户输入                                                          │
+│     │                                                              │
+│     ▼                                                              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │
+│  │  Intent  │→ │Orchestrator│→ │Collection │→ │    Builder       │ │
+│  │ Layer    │  │          │  │ Layer     │  │  (ContextBuilder) │ │
+│  └──────────┘  └──────────┘  └──────────┘  └────────┬─────────┘ │
+│                                                      │              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐            │              │
+│  │ Feedback │← │   LLM    │← │ Packager │←───────────┘              │
+│  │ Layer    │  │  Client  │  │          │                           │
+│  └──────────┘  └──────────┘  └──────────┘                           │
+│                                                      │              │
+│  ┌───────────────────────────────────────────────────┘              │
+│  ▼                                                                  │
+│  ┌──────────┐                                                       │
+│  │ Optimizer │  (RelevanceRanker + Compressor + Budget)             │
+│  └──────────┘                                                       │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────┐      │
+│  │                   Memory System                           │      │
+│  │  Working │ ShortTerm │ LongTerm │ Episodic │ Semantic    │      │
+│  └──────────────────────────────────────────────────────────┘      │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────┐      │
+│  │               SQLite Store (持久化层)                     │      │
+│  └──────────────────────────────────────────────────────────┘      │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 十、技术栈
+## 模块说明
 
-- 核心语言：Java
-- LLM 调用：DeepSeek / OpenAI / Claude 兼容
-- 向量数据库：SQLite + Embedding Service
-- 知识图谱：内嵌图结构（SemanticMemory）
+### Core（核心基础层）
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| **base.py** | 4 个抽象基类 | `BaseCollector` / `BaseMemoryStore` / `BasePromptAdapter` / `BaseLLMClient` |
+| **models.py** | 20+ Pydantic 模型 | `TaskSpec` / `UnifiedContext` / `OptimizedContext` / `PackagedContext` / `EvalMetrics` 等 |
+| **errors.py** | 3 层异常体系 | `ContextOSError` → `ContextBuildError` / `MemoryError` |
+| **logger.py** | 统一日志 | 支持环境变量 `LOG_LEVEL`，统一格式输出到 stdout |
+
+### Intent（意图理解层）
+| 模块 | 职责 |
+|------|------|
+| **IntentClassifier** | 用户输入分类 → `(IntentType, GoalType, confidence)`，支持 LLM 语义分类 + Regex 降级 |
+| **EntityExtractor** | 提取命名实体 + 推断工具需求 + 推断知识需求 |
+| **TaskParser** | 组装分类+提取结果 → 标准 `TaskSpec` |
+
+### Orchestrator（编排层）
+| 模块 | 职责 |
+|------|------|
+| **ContextSelector** | 按意图类型动态决定收集哪些数据源（8 种意图 × 不同 ContextFlag 组合） |
+| **ContextRouter** | `ContextFlag` → 按优先级排序的 `ContextRoute[]` |
+
+### Collection（数据收集层）
+| 模块 | 职责 |
+|------|------|
+| **IdentityCollector** | 用户身份信息（角色/权限/语言等），支持注入或从环境变量读取 |
+| **ConversationCollector** | 对话历史环形缓冲区（默认最多 50 轮） |
+| **EnvironmentCollector** | 系统运行环境（OS/Git/Python 版本/MCP 服务器等） |
+
+### Memory（记忆系统 — 核心亮点）
+
+10 种记忆类型，按生命周期和用途分层：
+
+| 记忆类型 | 持久化 | 生命周期 | 用途 |
+|---------|--------|---------|------|
+| **WorkingMemory** | 纯内存 | 当前对话 | 活跃上下文，Token 预算控制（默认 8K），环形缓冲区 |
+| **ShortTermMemory** | SQLite | Session（默认 24h） | 用户偏好、子任务记录、错误恢复记录 |
+| **LongTermMemory** | SQLite | 跨 Session | 用户偏好/项目上下文/决策记录，Ebbinghaus 遗忘曲线自动清理 |
+| **EpisodicMemory** | SQLite | 永久 | "场景-行动-结果"故事化记录，成功/失败经验 |
+| **SemanticMemory** | SQLite | 永久 | 知识图谱（Concept → Relation → Concept），BFS 子图查询 |
+| **FactMemory** | SQLite | 永久 | 版本化 KV 存储（支持历史版本追溯、置信度管理） |
+| **ProceduralMemory** | SQLite | 永久 | 工作流步骤模式存储（附带成功率统计） |
+| **ReflectionMemory** | SQLite | 永久 | Agent 自我反思（根因分析/经验教训/预防措施） |
+| **TaskMemory** | SQLite | 永久 | 任务执行记录（状态/耗时/Token 用量） |
+| **ToolExperienceMemory** | SQLite | 永久 | 工具调用成功率/平均耗时统计 |
+
+**记忆检索排序算法**（定义于 `optimizer/ranker.py`）：
+```
+score = 0.5 × 语义相似度(cosine) + 0.3 × 时间衰减(exp) + 0.2 × 访问频率(log)
+```
+
+**记忆写入策略**（定义于 `feedback/memory_updater.py`）：
+| 层级 | 条件 | 内容 |
+|------|------|------|
+| Working | 每次执行 | 用户输入 + LLM 回复 |
+| ShortTerm | 每次执行 | 任务完成记录 |
+| LongTerm | reward ≥ 0.7 | 高质量问答对 |
+| Episodic | 总是 | success / failure 经验 |
+| Semantic | 批量抽象 | 从高频 Episodic 标签提炼概念 |
+
+### Builder（上下文构建）
+| 模块 | 职责 |
+|------|------|
+| **ContextBuilder** | 编排 Selector→Router→并行收集→记忆检索→Merger |
+| **ContextMerger** | 合并多个 UnifiedContext + 归一化排序 + 去重 |
+
+### Optimizer（上下文优化）
+| 模块 | 职责 |
+|------|------|
+| **RelevanceRanker** | 语义+时间+频率三维排序 |
+| **ContextCompressor** | LLM 摘要或截断式压缩对话/记忆 |
+| **TokenBudgetAllocator** | 各模块 Token 预算分配（instruction 10%/conversation 20%/memory 10%/knowledge 45%/tools 15%） |
+
+### Packager（Prompt 打包）
+| 适配器 | 格式 |
+|--------|------|
+| **ClaudePromptAdapter** | XML 标签格式 (`<identity>`, `<memory>`, `<conversation>` 等) |
+| **OpenAIPromptAdapter** | 纯文本分段格式 (`[Identity]`, `[Memory]`, `[Conversation]`) |
+| 复用 | DeepSeek 兼容 OpenAI 格式 |
+
+### LLM（客户端）
+| 客户端 | 默认模型 | 说明 |
+|--------|---------|------|
+| `AnthropicClient` | claude-sonnet-4-20250514 | Anthropic SDK |
+| `OpenAIClient` | gpt-4o | OpenAI SDK |
+| `DeepSeekClient` | deepseek-chat | OpenAI 兼容接口 |
+
+### Feedback（反馈闭环）
+| 模块 | 职责 |
+|------|------|
+| **QualityEvaluator** | 评估答案质量、幻觉风险、延迟、Token 成本 |
+| **MemoryUpdater** | 自动写入 Working/ShortTerm/LongTerm/Episodic/Semantic |
+| **Tracer** | 记录完整 Pipeline 轨迹到 JSON 文件 |
+
+### Pipeline（两种实现）
+
+| 实现 | 特点 |
+|------|------|
+| **ContextOSPipeline** | 单体编排，六步硬编码，适合直接使用 |
+| **PipelineEngine** | Middleware Chain 模式，可插拔，事件驱动，适合二次开发 |
+
+---
+
+## 配置
+
+默认配置文件 `context_os/config.yaml`：
+
+```yaml
+context-os:
+  pipeline:
+    middlewares:
+      - name: intent;   enabled: true;  order: 100
+      - name: build;    enabled: true;  order: 300
+      - name: optimize; enabled: true;  order: 400
+      - name: package;  enabled: true;  order: 500
+      - name: llm;      enabled: true;  order: 600
+      - name: feedback; enabled: true;  order: 700
+  llm:
+    provider: deepseek
+    api-key: ${DEEPSEEK_API_KEY:}
+    model: deepseek-chat
+  memory:
+    working-memory: { max-tokens: 32000 }
+    short-term:    { ttl-hours: 24 }
+    long-term:     { max-items: 1000 }
+  store:
+    provider: sqlite
+    db-path: ./data/context_os.db
+```
+
+配置支持 `mtime` 热加载（每 30s 检测）和环境变量替换 `${VAR:default}`。
+
+---
+
+## 意图驱动的上下文选择
+
+根据意图类型动态决定数据源收集范围，避免浪费 Token：
+
+| 意图 | Identity | Conversation | Environment | Memory | Knowledge | Tools |
+|------|----------|-------------|-------------|--------|-----------|-------|
+| QA | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| CODING | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| DEBUGGING | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| PLANNING | ✗ | ✓ | ✗ | ✓ | ✓ | ✗ |
+| SEARCH | ✗ | ✗ | ✗ | ✓ | ✓ | ✗ |
+| WORKFLOW | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ |
+| AGENT | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| DATA_ANALYSIS | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ |
+
+当 Token 预算 < 8000 时自动裁减 MEMORY 和 ENVIRONMENT。
+
+---
+
+## 质量评估指标
+
+| 指标 | 说明 |
+|------|------|
+| `answer_quality` | 答案质量（0-1），有 LLM 时调用 LLM 评分 |
+| `latency_ms` | LLM 调用延迟 |
+| `cost_usd` | Token 成本估算（$3/M input） |
+| `success` | 是否包含错误信号 |
+| `reward_score` | 综合奖励分 |
+
+---
+
+## 项目结构
+
+```
+context_os/
+├── __init__.py              # 公共 API 导出
+├── pipeline.py              # 主 Pipeline 入口（ContextOSPipeline）
+├── config.yaml              # 配置文件
+├── core/                    # 基础层：基类/模型/异常/日志
+├── config/                  # ConfigManager + AppConfig
+├── intent/                  # Classifier + Extractor + Parser
+├── orchestrator/            # Selector + Router
+├── collection/              # Identity + Conversation + Environment
+├── memory/                  # 10 种记忆 + SQLiteStore + Embedding
+├── builder/                 # ContextBuilder + ContextMerger
+├── optimizer/               # Ranker + Compressor + Budget
+├── packager/                # ContextPackager + Adapters
+├── llm/                     # Anthropic / OpenAI / DeepSeek 客户端
+├── feedback/                # Evaluator + Tracer + MemoryUpdater
+├── pipeline/                # Middleware Chain 引擎 + EventBus
+├── store/                   # StoreProvider + StoreSession
+└── scripts/                 # 运行脚本
+
+examples/
+├── basic_pipeline.py        # 基本使用示例
+├── custom_adapter.py        # 自定义 Adapter 示例
+├── longmemeval_benchmark.py # LongMemEval 基准测试
+└── memory_comparison.py     # 记忆对比分析
+
+tests/                       # 单元测试
+```
+
+---
+
+## 技术栈
+
+- **语言**: Python 3.14+
+- **LLM SDK**: `anthropic`, `openai`
+- **存储**: `aiosqlite`（WAL 模式，支持 JSON 文件降级）
+- **数据模型**: `pydantic`
+- **数值计算**: `numpy`
+- **依赖管理**: `pyproject.toml`
 
 ---
 
 ## 路线图
 
-### Phase 1 — 基础 Pipeline
+### Phase 1 — 基础 Pipeline ✓
+- [x] Intent Understanding 引擎（LLM + Regex 双模式）
+- [x] Context Orchestrator 动态选择
+- [x] 数据收集层（Identity + Conversation + Environment）
+- [x] 10 种记忆子系统完整实现
+- [x] Context Builder + Merger
+- [x] Context Optimizer（排序+压缩+Token Budget）
+- [x] Context Packager + 多模型适配（Claude/OpenAI/DeepSeek）
 
-- [x]  Intent Understanding 引擎
-- [x]  Context Orchestrator 动态选择
-- [x]  基础 Context Collection（Identity + Conversation）
-- [x]  7 记忆子系统完整实现
+### Phase 2 — Middleware 化与事件驱动 ✓
+- [x] PipelineEngine + Middleware Chain
+- [x] PipelineEventBus 事件总线
+- [x] 8 个标准 Middleware 实现
+- [x] 配置热加载
 
-### Phase 2 — 智能 Context 管理
-
-- [x]  Context Builder 完整实现
-- [x]  Context Optimizer（压缩 + 排序 + Token Budget）
-- [x]  Context Packager 多模型适配
-
-### Phase 3 — 记忆与知识
-
-- [x]  Memory 长期记忆持久化
-- [x]  知识图谱实现
-- [ ]  RAG Knowledge 集成
+### Phase 3 — 增强能力
+- [ ] Embedding Service 完整集成（API/BM25/Ollama/ONNX）
+- [ ] RAG 知识库集成
+- [ ] Multi-Agent 上下文共享
+- [ ] 分布式存储支持（PostgreSQL）
 
 ### Phase 4 — 学习与进化
-
-- [x]  MemoryLifecycle 30/90 天遗忘机制
-- [ ]  Trace & Replay 系统
-- [ ]  基于反馈的 Context 自优化
+- [ ] Knowledge Evolution 自动知识演进
+- [ ] Trace & Replay 系统
+- [ ] 基于强化学习的 Context 自优化
+- [ ] 在线 Benchmark Dashboard
