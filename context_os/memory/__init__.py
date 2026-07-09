@@ -10,11 +10,15 @@ from context_os.memory.fact_memory import FactMemory, FactRecord
 from context_os.memory.task_memory import TaskMemory
 from context_os.memory.procedural_memory import ProceduralMemory
 from context_os.memory.tool_experience_memory import ToolExperienceMemory
-from context_os.memory.embedding_service import EmbeddingService, EmbeddingProvider
+from context_os.memory.embedding import (
+    EmbeddingProvider, EmbeddingServiceFactory, DisabledProvider,
+    cosine_similarity,
+)
 
 __all__ = [
     "SQLiteStore", "WorkingMemory", "ShortTermMemory", "LongTermMemory",
     "EpisodicMemory", "SemanticMemory", "ReflectionMemory", "FactMemory",
     "FactRecord", "TaskMemory", "ProceduralMemory", "ToolExperienceMemory",
-    "EmbeddingService", "EmbeddingProvider",
+    "EmbeddingProvider", "EmbeddingServiceFactory", "DisabledProvider",
+    "cosine_similarity",
 ]
