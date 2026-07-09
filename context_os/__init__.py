@@ -8,6 +8,7 @@ from context_os.core.models import (
 )
 from context_os.core.base import BaseCollector, BaseMemoryStore, BasePromptAdapter, BaseLLMClient
 from context_os.core.errors import ContextOSError, ContextBuildError, MemoryError
+from context_os.entry import ContextOSPipeline
 
 __all__ = [
     "IntentType", "GoalType", "MemoryType", "PriorityLevel", "LLMProvider",
@@ -18,4 +19,5 @@ __all__ = [
     "TraceStep", "Trace", "EvalMetrics",
     "BaseCollector", "BaseMemoryStore", "BasePromptAdapter", "BaseLLMClient",
     "ContextOSError", "ContextBuildError", "MemoryError",
+    "ContextOSPipeline",
 ]

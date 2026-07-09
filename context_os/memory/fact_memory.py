@@ -1,4 +1,4 @@
-﻿"""FactMemory — 版本化事实 KV 存储。"""
+"""FactMemory — 版本化事实 KV 存储。"""
 from __future__ import annotations
 import json, uuid
 from datetime import datetime, timezone

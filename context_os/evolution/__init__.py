@@ -1,4 +1,4 @@
-﻿"""KnowledgeEvolution — 知识图谱自演化（完整 Java 对齐 Pipeline）。
+"""KnowledgeEvolution — 知识图谱自演化（完整 Java 对齐 Pipeline）。
 
 Pipeline: extractConcepts → clusterConcepts → mergeClusters → summarizeClusters → updateGraph
 对齐 Java: com.owencli.contextos.evolution.KnowledgeEvolution

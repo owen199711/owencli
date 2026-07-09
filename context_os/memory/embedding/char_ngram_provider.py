@@ -1,4 +1,4 @@
-﻿"""CharNGramEmbeddingService — 中文二元组 + 英文三元组嵌入（对齐 Java CharNGramEmbeddingService）。
+"""CharNGramEmbeddingService — 中文二元组 + 英文三元组嵌入（对齐 Java CharNGramEmbeddingService）。
 
 256 维向量，零依赖，纯算法。
 """

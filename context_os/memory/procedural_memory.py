@@ -1,4 +1,4 @@
-﻿"""ProceduralMemory — 存储已学习的工作流程与步骤模式。
+"""ProceduralMemory — 存储已学习的工作流程与步骤模式。
 
 参考 Java: com.owencli.contextos.memory.ProceduralMemory
 存储：procedures 表，含步骤序列、场景标签、成功率

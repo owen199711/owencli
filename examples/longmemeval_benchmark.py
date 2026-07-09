@@ -73,7 +73,7 @@ class MemoryAgent:
     """Context-OS 完整记忆系统 Agent。"""
 
     def __init__(self, llm_client: Any, db_path: Optional[str] = None, inspect: bool = False):
-        from context_os.pipeline import ContextOSPipeline
+        from context_os import ContextOSPipeline
         from context_os.core.models import LLMProvider
 
         provider_name = type(llm_client).__name__.lower()

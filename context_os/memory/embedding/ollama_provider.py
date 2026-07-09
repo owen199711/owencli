@@ -1,4 +1,4 @@
-﻿"""OllamaEmbeddingService — Ollama 本地 API 嵌入（对齐 Java OllamaEmbeddingService）。
+"""OllamaEmbeddingService — Ollama 本地 API 嵌入（对齐 Java OllamaEmbeddingService）。
 
 POST http://localhost:11434/api/embeddings
 """

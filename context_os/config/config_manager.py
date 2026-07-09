@@ -1,4 +1,4 @@
-﻿"""ConfigManager — 支持 mtime 热加载。"""
+"""ConfigManager — 支持 mtime 热加载。"""
 from __future__ import annotations
 import logging, os, time, re, yaml
 from pathlib import Path

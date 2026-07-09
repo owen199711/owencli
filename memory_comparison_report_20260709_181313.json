@@ -1,0 +1,393 @@
+[
+  {
+    "id": "T5",
+    "description": "长链数值累积 — 需要完整 8 轮历史才能算对，SimpleAgent 截断必丢初始值",
+    "rounds": [
+      {
+        "question": "我的钱包初始有 5 元，请记住这个数字。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 1596.0,
+        "latency_b_ms": 2921.0,
+        "keyword_hits_a": 1,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "我刚花了 3 元买水，更新一下余额。",
+        "quality_a": 0.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 1097.0,
+        "latency_b_ms": 2815.0,
+        "keyword_hits_a": 0,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "又赚了 5 元，是帮同学跑腿的报酬。",
+        "quality_a": 0.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 1561.0,
+        "latency_b_ms": 3625.0,
+        "keyword_hits_a": 0,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "然后花了 2 元买零食。",
+        "quality_a": 0.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 1394.0,
+        "latency_b_ms": 3220.0,
+        "keyword_hits_a": 0,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "妈妈又给了我 10 元零花钱。",
+        "quality_a": 0.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 999.0,
+        "latency_b_ms": 3419.0,
+        "keyword_hits_a": 0,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "我买了一本书花了 6 元。",
+        "quality_a": 0.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 1079.0,
+        "latency_b_ms": 3749.0,
+        "keyword_hits_a": 0,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "朋友还了我之前借的 4 元。",
+        "quality_a": 0.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 1191.0,
+        "latency_b_ms": 3071.0,
+        "keyword_hits_a": 0,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "最后我又买了杯奶茶花了 3 元，现在告诉我钱包里还剩多少钱？请给出计算过程。",
+        "quality_a": 0.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 2801.0,
+        "latency_b_ms": 3424.0,
+        "keyword_hits_a": 0,
+        "keyword_hits_b": 2,
+        "exact_a": false,
+        "exact_b": true
+      }
+    ],
+    "avg_quality_a": 0.12,
+    "avg_quality_b": 1.0,
+    "improvement": 0.88
+  },
+  {
+    "id": "T6",
+    "description": "配置多次覆盖 — 必须按时间顺序追踪每次变更才能给出最新值",
+    "rounds": [
+      {
+        "question": "把数据库连接池大小设为 10。",
+        "quality_a": 1.0,
+        "quality_b": 0.0,
+        "latency_a_ms": 4430.0,
+        "latency_b_ms": 3617.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 0
+      },
+      {
+        "question": "把日志级别改成 DEBUG。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 1549.0,
+        "latency_b_ms": 3066.0,
+        "keyword_hits_a": 1,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "数据库连接池大小改为 20。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 4345.0,
+        "latency_b_ms": 2858.0,
+        "keyword_hits_a": 1,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "开启慢查询日志。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 5979.0,
+        "latency_b_ms": 3544.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 2
+      },
+      {
+        "question": "日志级别改成 INFO，连接池改为 30。",
+        "quality_a": 1.0,
+        "quality_b": 0.0,
+        "latency_a_ms": 7213.0,
+        "latency_b_ms": 3318.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 0
+      },
+      {
+        "question": "关闭慢查询日志。",
+        "quality_a": 0.33,
+        "quality_b": 0.33,
+        "latency_a_ms": 6341.0,
+        "latency_b_ms": 3519.0,
+        "keyword_hits_a": 1,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "现在告诉我：当前数据库连接池大小、日志级别、慢查询日志状态分别是什么？",
+        "quality_a": 0.0,
+        "quality_b": 0.0,
+        "latency_a_ms": 2880.0,
+        "latency_b_ms": 3783.0,
+        "keyword_hits_a": 0,
+        "keyword_hits_b": 0,
+        "exact_a": false,
+        "exact_b": false
+      }
+    ],
+    "avg_quality_a": 0.76,
+    "avg_quality_b": 0.48,
+    "improvement": -0.29
+  },
+  {
+    "id": "T7",
+    "description": "偏好多次反转 — Q5 需同时回答『当前状态』和『转变节点』",
+    "rounds": [
+      {
+        "question": "小明 5 岁时最讨厌吃蔬菜，尤其是西兰花，每次吃饭都哭。请记住他这个偏好。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 1812.0,
+        "latency_b_ms": 2638.0,
+        "keyword_hits_a": 3,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "小明 10 岁时生了一场大病，医生建议多吃蔬菜增强免疫力，他开始尝试吃西兰花。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 3147.0,
+        "latency_b_ms": 3138.0,
+        "keyword_hits_a": 3,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "13 岁时小明看了纪录片《奶牛阴谋》，决定成为素食主义者，西兰花成了他的最爱。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 3227.0,
+        "latency_b_ms": 3857.0,
+        "keyword_hits_a": 3,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "18 岁小明去美国留学，室友是德州人，带他吃牛排后他开始重新吃肉，但仍然爱吃蔬菜。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 5996.0,
+        "latency_b_ms": 4038.0,
+        "keyword_hits_a": 3,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "现在小明 25 岁。请告诉我：他现在对西兰花的态度？对肉类的态度？最初是从几岁开始转变的？经历过几次重大转变？",
+        "quality_a": 0.5,
+        "quality_b": 1.0,
+        "latency_a_ms": 2190.0,
+        "latency_b_ms": 4656.0,
+        "keyword_hits_a": 3,
+        "keyword_hits_b": 6
+      }
+    ],
+    "avg_quality_a": 0.9,
+    "avg_quality_b": 1.0,
+    "improvement": 0.1
+  },
+  {
+    "id": "T8",
+    "description": "关系多次跃迁 — Q5 需梳理完整关系演变时间线",
+    "rounds": [
+      {
+        "question": "小明和小红是初中同桌，两人经常因为边界问题吵架，互相看不顺眼，是班里有名的死对头。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 3009.0,
+        "latency_b_ms": 3611.0,
+        "keyword_hits_a": 3,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "高中分班后两人意外被分到同组做科技创新大赛项目，合作过程中发现彼此的优点，关系缓和。",
+        "quality_a": 0.67,
+        "quality_b": 1.0,
+        "latency_a_ms": 13527.0,
+        "latency_b_ms": 2464.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "大学两人考进同一所学校不同专业，经常一起自习，成了好朋友。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 10712.0,
+        "latency_b_ms": 3591.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 2
+      },
+      {
+        "question": "毕业后两人都在北京工作，合租了一套房子，日久生情，确定恋爱关系。",
+        "quality_a": 0.67,
+        "quality_b": 1.0,
+        "latency_a_ms": 6303.0,
+        "latency_b_ms": 3855.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "去年国庆两人领证结婚了。现在请回顾：小明和小红的关系经历过哪几个阶段？最早是从哪个事件开始转变的？现在是什么关系？",
+        "quality_a": 0.6,
+        "quality_b": 1.0,
+        "latency_a_ms": 2122.0,
+        "latency_b_ms": 5432.0,
+        "keyword_hits_a": 3,
+        "keyword_hits_b": 5
+      }
+    ],
+    "avg_quality_a": 0.79,
+    "avg_quality_b": 1.0,
+    "improvement": 0.21
+  },
+  {
+    "id": "T9",
+    "description": "理想多次转向 — Q5 需回忆所有被放弃的目标及原因",
+    "rounds": [
+      {
+        "question": "小明小学时的梦想是当科学家，最爱去科技馆，房间里贴满了爱因斯坦的海报。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 2125.0,
+        "latency_b_ms": 3345.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 2
+      },
+      {
+        "question": "初中小明迷上了编程，参加了 NOIP 信息学竞赛拿了一等奖，梦想变成当程序员。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 8888.0,
+        "latency_b_ms": 4205.0,
+        "keyword_hits_a": 3,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "高中小明的父亲生病，他受到医生照顾的感动，立志学医当外科医生。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 7831.0,
+        "latency_b_ms": 5120.0,
+        "keyword_hits_a": 3,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "大学小明考进了医学院，但实习时发现自己晕血，转专业去学了医疗 AI，把编程和医学结合起来。",
+        "quality_a": 0.67,
+        "quality_b": 1.0,
+        "latency_a_ms": 7526.0,
+        "latency_b_ms": 3987.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "现在请回答：小明先后放弃过哪些梦想？每次放弃的原因分别是什么？最终的职业方向是什么？",
+        "quality_a": 0.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 2934.0,
+        "latency_b_ms": 5319.0,
+        "keyword_hits_a": 0,
+        "keyword_hits_b": 5
+      }
+    ],
+    "avg_quality_a": 0.73,
+    "avg_quality_b": 1.0,
+    "improvement": 0.27
+  },
+  {
+    "id": "T10",
+    "description": "多属性并发演变 — SimpleAgent 极易混淆不同属性的修改历史",
+    "rounds": [
+      {
+        "question": "记录一下小明的状态：身高 120cm，体重 25kg，最喜欢的颜色是红色。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 815.0,
+        "latency_b_ms": 3697.0,
+        "keyword_hits_a": 3,
+        "keyword_hits_b": 3
+      },
+      {
+        "question": "小学毕业时长到 140cm了，体重 30kg。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 3785.0,
+        "latency_b_ms": 3816.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 2
+      },
+      {
+        "question": "初中时迷上了蓝色，不再喜欢红色了。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 3728.0,
+        "latency_b_ms": 3533.0,
+        "keyword_hits_a": 1,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "高中坚持打篮球，身高 175cm，体重 65kg。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 10826.0,
+        "latency_b_ms": 3127.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 2
+      },
+      {
+        "question": "大学开始健身，体重涨到 75kg，但最喜欢颜色变成了黑色。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 4098.0,
+        "latency_b_ms": 3037.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 2
+      },
+      {
+        "question": "工作后因为久坐没运动，体重涨到 80kg。",
+        "quality_a": 1.0,
+        "quality_b": 1.0,
+        "latency_a_ms": 11993.0,
+        "latency_b_ms": 4875.0,
+        "keyword_hits_a": 1,
+        "keyword_hits_b": 1
+      },
+      {
+        "question": "最近开始减肥，体重回到 72kg，又喜欢上了绿色。现在请告诉我：小明当前的身高、体重、最喜欢的颜色分别是什么？每个属性分",
+        "quality_a": 0.4,
+        "quality_b": 1.0,
+        "latency_a_ms": 1889.0,
+        "latency_b_ms": 4619.0,
+        "keyword_hits_a": 2,
+        "keyword_hits_b": 5
+      }
+    ],
+    "avg_quality_a": 0.91,
+    "avg_quality_b": 1.0,
+    "improvement": 0.09
+  }
+]

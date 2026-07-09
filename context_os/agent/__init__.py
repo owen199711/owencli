@@ -1,4 +1,4 @@
-﻿"""InteractiveAgent — CLI 交互式 Agent。
+"""InteractiveAgent — CLI 交互式 Agent。
 
 参考 Java: com.owencli.contextos.agent.InteractiveAgent
 支持命令：/memory, /debug, /clear, /stats, /help

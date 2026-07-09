@@ -1,4 +1,4 @@
-﻿"""APIEmbeddingService — HTTP 远程嵌入（对齐 Java APIEmbeddingService）。
+"""APIEmbeddingService — HTTP 远程嵌入（对齐 Java APIEmbeddingService）。
 
 OpenAI-compatible API 格式。
 """

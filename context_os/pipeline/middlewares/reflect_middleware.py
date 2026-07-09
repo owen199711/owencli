@@ -1,4 +1,4 @@
-﻿"""ReflectMiddleware — 后任务自省。"""
+"""ReflectMiddleware — 后任务自省。"""
 from context_os.pipeline.context import PipelineContext
 from context_os.pipeline.middleware import PipelineMiddleware
 from context_os.memory.reflection_memory import ReflectionMemory

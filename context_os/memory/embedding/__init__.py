@@ -1,4 +1,4 @@
-﻿"""EmbeddingService — 可插拔嵌入引擎。
+"""EmbeddingService — 可插拔嵌入引擎。
 
 完全对齐 Java 版：
   - EmbeddingProvider ABC + cosine_similarity 静态方法

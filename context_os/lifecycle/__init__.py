@@ -1,4 +1,4 @@
-﻿"""MemoryLifecycle — 记忆生命周期管理。
+"""MemoryLifecycle — 记忆生命周期管理。
 
 Write → Consolidate → Summarize → Archive → Forget
 参考 Java: com.owencli.contextos.lifecycle.MemoryLifecycle

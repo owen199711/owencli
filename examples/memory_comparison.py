@@ -1,21 +1,26 @@
-"""智能体对比测试：无记忆 vs 有记忆。
+"""记忆系统对比测试：无记忆 (SimpleAgent) vs 有记忆 (Context-OS MemoryAgent)。
 
 运行:
     python examples/memory_comparison.py
 
 测试场景:
-    用户连续提出 3 个问题，其中后面的问题依赖前面的上下文。
-    对比两个智能体的回复质量。
+    6 个测试用例（T5~T10），每个包含 5~8 轮连续对话，
+    后面的问题依赖前面多轮的上下文。无记忆 Agent 不给任何历史，
+    有记忆 Agent 通过 Context-OS 的分层记忆系统自动检索上下文。
 
-场景设计:
-    Q1: "我的项目使用 FastAPI + PostgreSQL，帮我生成用户表模型"
-    Q2: "添加创建时间和更新时间字段"        ← 依赖 Q1 知道在哪个文件改
-    Q3: "刚才的 User 模型中，密码字段存储方式应该改一下"   ← 依赖 Q1+Q2 的完整上下文
+数据集:
+    T5 - 长链数值累积（8 轮加减 → 问余额）
+    T6 - 配置多次覆盖（7 轮变更 → 问最新值）
+    T7 - 偏好多次反转（4 轮演变 → 问当前 + 转变节点）
+    T8 - 人际关系跃迁（4 轮 → 问完整时间线）
+    T9 - 职业理想转向（4 轮 → 问所有被放弃的目标）
+    T10 - 多属性并发演变（7 轮 → 问最终值 + 修改次数）
 """
 
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -28,18 +33,20 @@ import json
 # ═══════════════════════════════════════════════════════════════════
 
 class SimpleAgent:
-    """最简单的 Agent — 无记忆、无 Context 管理。
+    """无记忆 Agent — 每次调用完全独立，不给任何上下文。
 
-    每次调用完全独立，只传当前输入。
+    模拟"无记忆系统"的行为：
+    - 无 conversation_history
+    - 无检索 / 无 Context-OS Pipeline
+    - 只传当前输入的原始文本给 LLM
     """
 
     def __init__(self, llm_client: Any):
         self.llm_client = llm_client
-        self.conversation_history: list[dict] = []  # 简陋的手动历史
-        print("[SimpleAgent] 已初始化（无记忆系统）")
+        print("[SimpleAgent] 已初始化（无记忆 — 每次调用完全独立）")
 
     async def chat(self, user_input: str) -> str:
-        """对话 — 仅拼接原始对话历史。
+        """对话 — 完全无上下文，只传当前输入。
 
         Args:
             user_input: 用户输入。
@@ -47,20 +54,8 @@ class SimpleAgent:
         Returns:
             LLM 回复。
         """
-        # 简陋拼接：把历史消息列表转文字
-        context = ""
-        if self.conversation_history:
-            history_lines = []
-            for h in self.conversation_history[-5:]:  # 最多保留 5 轮
-                history_lines.append(f"{h['role']}: {h['content']}")
-            context = "\n".join(history_lines) + "\n\n"
-
-        prompt = f"{context}User: {user_input}\nAssistant:"
+        prompt = f"User: {user_input}\nAssistant:"
         response = await self.llm_client.complete(prompt, max_tokens=2000)
-
-        self.conversation_history.append({"role": "user", "content": user_input})
-        self.conversation_history.append({"role": "assistant", "content": str(response)[:200]})
-
         return str(response)
 
 
@@ -84,7 +79,7 @@ class MemoryAgent:
         llm_client: Any,
         db_path: Optional[str] = None,
     ):
-        from context_os.pipeline import ContextOSPipeline
+        from context_os import ContextOSPipeline
         from context_os.core.models import LLMProvider
 
         # 自动检测 provider
@@ -138,9 +133,12 @@ class TestCase:
     id: str
     questions: list[str]
     description: str
-    # 评估标准：回答中应包含的关键词（验证记忆是否生效）
-    # 每个 Q 的 expected_keywords
+    # 每个 Q 应包含的关键词（粗略评估）
     expected_keywords_per_q: list[list[str]]
+    # 最后一问的标准答案（精确匹配，区分大小写敏感度看字段类型）
+    ground_truth: str = ""
+    # ground_truth 是否为数值（数值用正则匹配）
+    ground_truth_is_numeric: bool = False
 
 
 TEST_CASES = [
@@ -171,8 +169,10 @@ TEST_CASES = [
             ["15"],           # 5+10=15
             ["9"],            # 15-6=9
             ["13"],           # 9+4=13
-            ["10", "13", "-3"],  # 13-3=10，必须引用 13 这个中间结果
+            ["10", "13"],  # 13-3=10，必须引用 13 这个中间结果
         ],
+        ground_truth="10",
+        ground_truth_is_numeric=True,
     ),
 
     # ──────────────────────────────────────────────────────────────
@@ -202,6 +202,7 @@ TEST_CASES = [
             ["disable", "off", "close"],
             ["30", "INFO", "disabled", "off"],  # 最终: pool=30, log=INFO, slow=off
         ],
+        ground_truth="连接池大小 30，日志级别 INFO，慢查询日志已关闭",
     ),
 
     # ──────────────────────────────────────────────────────────────
@@ -349,6 +350,7 @@ async def run_comparison(llm_client: Any, db_path: Optional[str] = None):
         total_quality_b = 0.0
 
         # 逐个问题测试
+        last_q_idx = len(case.questions) - 1
         for q_idx, question in enumerate(case.questions):
             print(f"\n  Q{q_idx+1}: {question[:80]}...")
 
@@ -362,7 +364,7 @@ async def run_comparison(llm_client: Any, db_path: Optional[str] = None):
             resp_b = await memory.chat(question)
             latency_b = (time.time() - t0) * 1000
 
-            # 评估关键词命中
+            # ── 评估 1: 关键词命中（粗略） ──
             expected = case.expected_keywords_per_q[q_idx]
             hits_a = sum(1 for kw in expected if kw.lower() in str(resp_a).lower())
             hits_b = sum(1 for kw in expected if kw.lower() in str(resp_b).lower())
@@ -370,6 +372,12 @@ async def run_comparison(llm_client: Any, db_path: Optional[str] = None):
             quality_b = hits_b / len(expected) if expected else 0
             total_quality_a += quality_a
             total_quality_b += quality_b
+
+            # ── 评估 2: 最后一问的精确匹配 ──
+            exact_a = exact_b = None
+            if q_idx == last_q_idx and case.ground_truth:
+                exact_a = _exact_match(str(resp_a), case.ground_truth, case.ground_truth_is_numeric)
+                exact_b = _exact_match(str(resp_b), case.ground_truth, case.ground_truth_is_numeric)
 
             round_info = {
                 "question": question[:60],
@@ -380,21 +388,37 @@ async def run_comparison(llm_client: Any, db_path: Optional[str] = None):
                 "keyword_hits_a": hits_a,
                 "keyword_hits_b": hits_b,
             }
+            if exact_a is not None:
+                round_info["exact_a"] = exact_a
+                round_info["exact_b"] = exact_b
             case_results["rounds"].append(round_info)
 
             # 输出
-            print(f"    ┌─ [无记忆] 关键词命中: {hits_a}/{len(expected)}  质量: {quality_a:.0%}  ({latency_a:.0f}ms)")
+            kw_info = f"关键词命中: {hits_a}/{len(expected)}  质量: {quality_a:.0%}"
+            print(f"    ┌─ [无记忆] {kw_info}  ({latency_a:.0f}ms)")
+            if exact_a is not None:
+                print(f"    │  精确匹配: {'✅ 正确' if exact_a else '❌ 错误'} (期望: {case.ground_truth})")
             print(f"    │  回复片段: {str(resp_a)[:150]}")
-            print(f"    └─ [有记忆] 关键词命中: {hits_b}/{len(expected)}  质量: {quality_b:.0%}  ({latency_b:.0f}ms)")
+
+            kw_info = f"关键词命中: {hits_b}/{len(expected)}  质量: {quality_b:.0%}"
+            print(f"    └─ [有记忆] {kw_info}  ({latency_b:.0f}ms)")
+            if exact_b is not None:
+                print(f"    │  精确匹配: {'✅ 正确' if exact_b else '❌ 错误'} (期望: {case.ground_truth})")
             print(f"       回复片段: {str(resp_b)[:150]}")
 
-            if q_idx >= 1:  # Q2+ 才体现记忆差异
+            if q_idx == last_q_idx:
+                if exact_a is not None and exact_b is not None:
+                    if exact_b and not exact_a:
+                        print(f"      🎯 记忆系统生效: 无记忆回答错误，有记忆正确！")
+                    elif exact_a and not exact_b:
+                        print(f"      ⚠️ 无记忆回答正确，有记忆反而错误（记忆检索可能有问题）")
+                    elif exact_a and exact_b:
+                        print(f"      ➖ 两者都正确（LLM 从问题推断出答案）")
+                    else:
+                        print(f"      ❌ 两者都错误（记忆检索没找到关键信息）")
+            elif q_idx >= 1:
                 if quality_b > quality_a:
                     print(f"      ✅ 记忆系统生效: 质量提升 +{quality_b - quality_a:.0%}")
-                elif quality_b == quality_a:
-                    print(f"      ➖ 两者相当")
-                else:
-                    print(f"      ❓ 无记忆反而更好（可能当前轮次不需要记忆）")
 
         # 用例汇总
         avg_a = total_quality_a / len(case.questions)
@@ -425,17 +449,36 @@ async def run_comparison(llm_client: Any, db_path: Optional[str] = None):
     total_avg_b = sum(r["avg_quality_b"] for r in all_results) / len(all_results)
     total_improv = total_avg_b - total_avg_a
 
-    report_lines.append(f"  全部测试平均质量:")
+    report_lines.append(f"  ┌─ {'场景':10s} │ {'无记忆(关键词)':16s} │ {'有记忆(关键词)':16s} │ {'无记忆(精确)':14s} │ {'有记忆(精确)':14s} │")
+    report_lines.append(f"  ├─{'─'*12}┼{'─'*18}┼{'─'*18}┼{'─'*16}┼{'─'*16}┤")
+    for r in all_results:
+        last = r["rounds"][-1]
+        exact_a = "—" if "exact_a" not in last else ("✅" if last["exact_a"] else "❌")
+        exact_b = "—" if "exact_b" not in last else ("✅" if last["exact_b"] else "❌")
+        report_lines.append(
+            f"  │ {r['id']:10s} │  {r['avg_quality_a']:.0%}             │  {r['avg_quality_b']:.0%}             │  {exact_a:>12s}     │  {exact_b:>12s}     │"
+        )
+    report_lines.append(f"  └─{'─'*12}┴{'─'*18}┴{'─'*18}┴{'─'*16}┴{'─'*16}┘")
+
+    report_lines.append(f"")
+    report_lines.append(f"  全部测试平均质量（关键词）:")
     report_lines.append(f"    无记忆系统: {total_avg_a:.1%}")
     report_lines.append(f"    有记忆系统: {total_avg_b:.1%}")
     report_lines.append(f"    提升幅度:   {total_improv:.1%}")
 
-    if total_improv > 0.2:
-        report_lines.append(f"\n  结论: ✅ 记忆系统效果显著 — 在连续对话场景中大幅提升回复质量")
-    elif total_improv > 0.05:
-        report_lines.append(f"\n  结论: 📈 记忆系统有效 — 对上下文依赖型任务有帮助")
+    # 统计精确匹配胜出次数
+    wins = sum(1 for r in all_results for last in [r["rounds"][-1]] if last.get("exact_b") and not last.get("exact_a"))
+    losses = sum(1 for r in all_results for last in [r["rounds"][-1]] if last.get("exact_a") and not last.get("exact_b"))
+    ties = sum(1 for r in all_results for last in [r["rounds"][-1]] if last.get("exact_a") is not None and last.get("exact_a") == last.get("exact_b"))
+
+    if wins > losses:
+        report_lines.append(f"")
+        report_lines.append(f"  精确匹配胜负: 记忆系统 {wins} 胜 / {losses} 负 / {ties} 平")
+        report_lines.append(f"  ✅ 结论: 记忆系统有效 — 在需要跨轮记忆的任务中显著提升正确率")
+    elif wins == losses and wins == 0:
+        report_lines.append(f"  ➖ 结论: 当前场景下记忆系统效果不显著")
     else:
-        report_lines.append(f"\n  结论: ➖ 当前场景下记忆系统效果不明显 — 可能场景不够复杂")
+        report_lines.append(f"  ⚠️ 结论: 记忆系统表现需优化 — 无记忆在某些场景反而更好")
 
     report_lines.append(f"\n{'=' * 80}")
 
@@ -451,6 +494,24 @@ async def run_comparison(llm_client: Any, db_path: Optional[str] = None):
     print(f"\n详细报告已保存: {report_path}")
 
     await memory.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 精确匹配工具
+# ═══════════════════════════════════════════════════════════════════
+
+def _exact_match(response: str, ground_truth: str, is_numeric: bool = False) -> bool:
+    """精确匹配最后一问的答案。
+
+    - 数值: 从回复中用正则提取数字，比较是否匹配
+    - 文本: 检查回复中是否包含所有关键要素
+    """
+    if is_numeric:
+        nums = re.findall(r"-?\d+", response.replace(",", ""))
+        return ground_truth in nums
+    # 文本: 期望答案的关键片段至少有一个出现在回复中
+    gt_lower = ground_truth.lower()
+    return gt_lower in response.lower()
 
 
 # ═══════════════════════════════════════════════════════════════════

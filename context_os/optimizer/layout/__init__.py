@@ -1,4 +1,4 @@
-﻿"""PromptLayout — 7 段式结构化 Prompt 模板。"""
+"""PromptLayout — 7 段式结构化 Prompt 模板。"""
 from __future__ import annotations
 from dataclasses import dataclass
 

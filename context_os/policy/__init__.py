@@ -1,4 +1,4 @@
-﻿"""ContextPolicy — 声明式策略引擎。"""
+"""ContextPolicy — 声明式策略引擎。"""
 from dataclasses import dataclass, field
 from typing import Optional
 

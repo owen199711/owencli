@@ -12,15 +12,40 @@
 import asyncio
 import os
 
+from context_os.config.config_manager import ConfigManager
 from context_os.core.models import LLMProvider
 from context_os.llm.deepseek_client import DeepSeekClient
 from context_os.llm.anthropic_client import AnthropicClient
 from context_os.llm.openai_client import OpenAIClient
-from context_os.pipeline import ContextOSPipeline
+from context_os import ContextOSPipeline
+
+
+def _load_api_key_from_config():
+    """从 config.yaml 读取 LLM API Key，设为环境变量（如果环境变量尚未设置）。"""
+    if os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY"):
+        return  # 环境变量已设置，优先使用
+    try:
+        cfg_mgr = ConfigManager()
+        cfg = cfg_mgr.get()
+        key = cfg.llm.api_key
+        provider = cfg.llm.provider.lower()
+        if key:
+            if provider == "deepseek":
+                os.environ["DEEPSEEK_API_KEY"] = key
+            elif provider in ("claude", "anthropic"):
+                os.environ["ANTHROPIC_API_KEY"] = key
+            elif provider == "openai":
+                os.environ["OPENAI_API_KEY"] = key
+            print(f"  [Config] Loaded {provider} API key from config.yaml")
+    except Exception as e:
+        print(f"  [Config] Could not load config.yaml: {e}")
 
 
 async def main():
     """演示 Context-OS Pipeline 的基本使用。"""
+
+    # 从 config.yaml 加载 API Key（若环境变量未设置）
+    _load_api_key_from_config()
 
     # ── 初始化 LLM Client（默认使用 DeepSeek）──
     provider = os.environ.get("LLM_PROVIDER", "deepseek").lower()

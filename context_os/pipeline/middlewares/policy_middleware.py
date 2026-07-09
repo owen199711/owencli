@@ -1,4 +1,4 @@
-﻿"""PolicyMiddleware — 策略评估。"""
+"""PolicyMiddleware — 策略评估。"""
 from context_os.pipeline.context import PipelineContext
 from context_os.pipeline.middleware import PipelineMiddleware
 from context_os.policy import ContextPolicy

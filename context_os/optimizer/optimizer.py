@@ -33,11 +33,13 @@ class ContextOptimizer:
         ranker: Optional[RelevanceRanker] = None,
         compressor: Optional[ContextCompressor] = None,
         budget: Optional[TokenBudgetAllocator] = None,
+        max_conv_tokens: int = 32000,
     ):
         self.ranker = ranker or RelevanceRanker()
         self.compressor = compressor or ContextCompressor()
         self.budget = budget or TokenBudgetAllocator()
-        logger.info("ContextOptimizer initialized")
+        self.max_conv_tokens = max_conv_tokens
+        logger.info("ContextOptimizer initialized: max_conv_tokens=%d", max_conv_tokens)
 
     async def optimize(
         self,
@@ -63,7 +65,7 @@ class ContextOptimizer:
         if context.conversation and context.conversation.history:
             compressed = await self.compressor.compress_conversation(
                 context.conversation.history,
-                max_tokens=2000,
+                max_tokens=self.max_conv_tokens,
             )
             # 将压缩后的文本存回 current_topic 字段（复用现有字段）
             context.conversation.current_topic = compressed if isinstance(compressed, str) else None

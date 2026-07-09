@@ -1,4 +1,4 @@
-﻿
+
 """MemoryExtractionEngine — 规则+LLM 混合事实提取。"""
 from __future__ import annotations
 import re

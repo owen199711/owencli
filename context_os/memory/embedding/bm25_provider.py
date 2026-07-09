@@ -1,4 +1,4 @@
-﻿"""BM25EmbeddingService — BM25 关键词嵌入（对齐 Java BM25EmbeddingService）。
+"""BM25EmbeddingService — BM25 关键词嵌入（对齐 Java BM25EmbeddingService）。
 
 256 维向量 + 停用词 + IDF + TF 归一化 + 中英文 Token 提取
 """
