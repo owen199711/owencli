@@ -30,7 +30,7 @@ class ConversationCollector(BaseCollector):
         max_history: 保留的最大对话轮次数，默认 50。
     """
 
-    def __init__(self, max_history: int = 50):
+    def __init__(self, max_history: int = 500):
         self._history: List[ConversationTurn] = []
         self.max_history = max_history
         logger.info(

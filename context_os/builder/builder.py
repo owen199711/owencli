@@ -89,11 +89,13 @@ class ContextBuilder:
             active_routes = [r for r in routes if r.flag in collector_map]
             collect_tasks = [collector_map[r.flag].collect() for r in active_routes]
 
-            # 记忆检索
+            # 记忆检索（按 intent 动态适配）
             memory_task = None
             if ContextFlag.MEMORY in flags:
                 memory_task = asyncio.create_task(
-                    self.long_term_memory.retrieve(task.raw_input, top_k=5)
+                    self.long_term_memory.retrieve(
+                        task.raw_input, top_k=5, intent=task.intent.value,
+                    )
                 )
                 collect_tasks.append(memory_task)
 

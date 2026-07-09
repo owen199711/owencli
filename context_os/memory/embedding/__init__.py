@@ -37,7 +37,7 @@ class DisabledProvider(EmbeddingProvider):
     async def embed_batch(self, texts: list[str]) -> list[list[float]]: return [[] for _ in texts]
 
 class EmbeddingServiceFactory:
-    MODES = {"bm25", "char_ngram", "api", "ollama", "disable", "auto"}
+    MODES = {"bm25", "char_ngram", "api", "ollama", "local", "disable", "auto"}
 
     def __init__(self, config=None): self.config = config or {}
 
@@ -46,11 +46,12 @@ class EmbeddingServiceFactory:
         logger.info("EmbeddingServiceFactory: mode=%s", mode)
         if mode == "api": return self._create_api()
         elif mode == "ollama": return self._create_ollama()
+        elif mode == "local": return self._create_local()
         elif mode == "disable": return DisabledProvider()
         elif mode == "char_ngram": return self._create_char_ngram()
         elif mode == "auto":
-            try: return self._create_bm25()  # always available
-            except: return DisabledProvider()
+            try: return self._create_local()  # 优先本地语义模型
+            except: return self._create_bm25()
         else: return self._create_bm25()
 
     def _create_bm25(self):
@@ -74,6 +75,12 @@ class EmbeddingServiceFactory:
         return OllamaProvider(
             endpoint=self.config.get("ollama_endpoint", "http://localhost:11434"),
             model=self.config.get("ollama_model", "nomic-embed-text"),
+        )
+
+    def _create_local(self):
+        from context_os.memory.embedding.local_provider import LocalEmbeddingProvider
+        return LocalEmbeddingProvider(
+            model_name=self.config.get("local_model", "all-MiniLM-L6-v2"),
         )
 
 # Module-level aliases

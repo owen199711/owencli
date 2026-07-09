@@ -18,6 +18,8 @@ context-os:
 
   embedding:
     mode: auto
+    local:
+      model: all-MiniLM-L6-v2
 
   memory:
     working-memory:

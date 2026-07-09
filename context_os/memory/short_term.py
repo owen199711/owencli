@@ -149,7 +149,15 @@ class ShortTermMemory:
             type="short_term",
             session_id=self.session_id,
         )
-        items = [MemoryItem(**r) for r in results]
+        items: list[MemoryItem] = []
+        for r in results:
+            try:
+                items.append(MemoryItem(**r))
+            except Exception as e:
+                logger.warning(
+                    "MemoryItem deserialization failed (id=%s): %s",
+                    r.get("id", "?"), e,
+                )
         logger.debug("STM get_all: session=%s, count=%d", self.session_id, len(items))
         return items
 

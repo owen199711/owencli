@@ -61,6 +61,7 @@ class ContextOSPipeline:
         db_path: Optional[str] = None,
         session_id: Optional[str] = None,
         user_id: str = "anonymous",
+        embedding_provider: Optional[Any] = None,
     ):
         """初始化 Pipeline。
 
@@ -70,11 +71,13 @@ class ContextOSPipeline:
             db_path: SQLite 数据库文件路径。默认从 DATABASE_URL 环境变量读取。
             session_id: Session ID（自动生成）。
             user_id: 用户 ID。
+            embedding_provider: 语义嵌入引擎（可选）。提供后 LTM 可做向量检索。
         """
         import uuid
         self.session_id = session_id or uuid.uuid4().hex[:12]
         self.user_id = user_id
         self.provider = provider
+        self._embedding_provider = embedding_provider
 
         # ── 存储层 ──
         self.store = SQLiteStore(db_path=db_path)
@@ -103,6 +106,7 @@ class ContextOSPipeline:
         self.long_term_memory = LongTermMemory(
             store=self.store,
             user_id=user_id,
+            embedding_provider=self._embedding_provider,
         )
         self.episodic_memory = EpisodicMemory(
             store=self.store,

@@ -281,6 +281,15 @@ class SQLiteStore:
         await self._conn.commit()
         return cursor.rowcount > 0
 
+    async def clear_all_memories(self) -> None:
+        """清空所有记忆（用于 benchmark 实例间隔离）。"""
+        if self._conn:
+            await self._conn.execute("DELETE FROM memories")
+            await self._conn.commit()
+        if self._fallback:
+            self._fallback.clear()
+        logger.info("All memories cleared")
+
     async def cleanup_expired(self) -> int:
         """清理所有已过期的记忆。"""
         if not self._conn:
@@ -490,7 +499,7 @@ class SQLiteStore:
         """将 aiosqlite.Row 转为普通 dict。"""
         result = dict(row)
         # 反序列化 JSON 字段
-        for key in ("metadata", "attributes"):
+        for key in ("metadata", "attributes", "embedding"):
             if key in result and isinstance(result[key], str):
                 try:
                     result[key] = json.loads(result[key])

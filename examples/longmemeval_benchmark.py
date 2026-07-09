@@ -75,6 +75,7 @@ class MemoryAgent:
     def __init__(self, llm_client: Any, db_path: Optional[str] = None, inspect: bool = False):
         from context_os import ContextOSPipeline
         from context_os.core.models import LLMProvider
+        from context_os.memory.embedding import EmbeddingServiceFactory
 
         provider_name = type(llm_client).__name__.lower()
         if "anthropic" in provider_name:
@@ -86,6 +87,9 @@ class MemoryAgent:
         else:
             provider = LLMProvider.CLAUDE
 
+        # 创建本地语义嵌入引擎（sentence-transformers）
+        embedding_provider = EmbeddingServiceFactory().create("local")
+
         ts = datetime.now().strftime("%Y%m%d%H%M%S")
         self.pipeline = ContextOSPipeline(
             llm_client=llm_client,
@@ -93,6 +97,7 @@ class MemoryAgent:
             db_path=db_path,
             session_id=f"lme-{ts}",
             user_id="lme-test",
+            embedding_provider=embedding_provider,
         )
         self._initialized = False
         self._inspect = inspect
@@ -205,18 +210,27 @@ class MemoryAgent:
         self.pipeline.run = hooked_run
 
     async def ingest_session(self, turns: list[dict]) -> None:
-        """把 session 中的每个 user turn 作为独立输入喂给 pipeline。
+        """把 session 中的对话存入 LTM（长期记忆），不写入当前对话窗口。
 
-        这样 LTM 会自动积累关键信息。
+        让 answer() 时 pipeline 的 retrieve() 从 LTM 检索相关内容，
+        而非把所有历史 session 塞进 LLM 上下文 — 这才是真正的记忆系统测试。
         """
         await self._ensure()
-        self._suppress_inspect = True  # ingest 时不打印
-        for t in turns:
-            if t["role"] == "user":
-                try:
-                    await self.pipeline.run(t["content"])
-                except Exception:
-                    pass
+        self._suppress_inspect = True
+        for i, t in enumerate(turns):
+            role = t.get("role", "user")
+            content = t.get("content", "")
+            if role in ("user", "assistant"):
+                # 只存 LTM，不进 conversation collector
+                await self.pipeline.long_term_memory.save(
+                    content=f"[{role}] {content}",
+                    memory_type="long_term",
+                    metadata={
+                        "role": role,
+                        "turn_index": i,
+                        "source": "longmemeval_haystack",
+                    },
+                )
         self._suppress_inspect = False
 
     async def answer(self, question: str) -> str:
@@ -336,10 +350,12 @@ async def run_benchmark(
         # ── Agent B: MemoryAgent ──
         try:
             memory_agent.pipeline.conversation.clear()
+            memory_agent.pipeline.working_memory.clear()
+            await memory_agent.pipeline.store.clear_all_memories()
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(
-                "Failed to clear conversation history: %s", e)
+                "Failed to clear conversation/working memory: %s", e)
         for session in sessions:
             await memory_agent.ingest_session(session)
         resp_b = await memory_agent.answer(question)
@@ -495,8 +511,8 @@ async def run_benchmark(
 def main():
     parser = argparse.ArgumentParser(description="LongMemEval 基准测试")
     parser.add_argument(
-        "--data", default="data/longmemeval/longmemeval_oracle",
-        help="数据集路径（默认 oracle 版本）",
+        "--data", default="examples/data/longmemeval/longmemeval_s",
+        help="数据集路径（默认 S 版本，~48 session）",
     )
     parser.add_argument(
         "--max-eval", type=int, default=20,
