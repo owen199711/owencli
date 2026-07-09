@@ -741,7 +741,7 @@ public class MemoryOSBenchRunner {
         var dataDir = "data/memoryos-bench";
         var dbPath = "./data/memoryos-bench.db";
         var outputDir = "results";
-        var apiKey = "";
+        var apiKey = System.getenv("DEEPSEEK_API_KEY");
         var llmType = "deepseek";    // mock | deepseek
         int maxCases = 20;
 
