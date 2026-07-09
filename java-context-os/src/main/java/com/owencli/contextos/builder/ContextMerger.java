@@ -52,9 +52,18 @@ public class ContextMerger {
     }
 
     public UnifiedContext normalize(UnifiedContext context) {
-        context.getMemory().sort((a, b) -> Double.compare(b.getRelevanceScore(), a.getRelevanceScore()));
-        context.getKnowledge().sort((a, b) -> Double.compare(b.getScore(), a.getScore()));
-        context.getTools().sort(Comparator.comparing(ToolContext::getName));
+        // Use mutable copies to avoid UnsupportedOperationException on immutable lists (e.g. List.of())
+        var memory = new ArrayList<>(context.getMemory());
+        var knowledge = new ArrayList<>(context.getKnowledge());
+        var tools = new ArrayList<>(context.getTools());
+
+        memory.sort((a, b) -> Double.compare(b.getRelevanceScore(), a.getRelevanceScore()));
+        knowledge.sort((a, b) -> Double.compare(b.getScore(), a.getScore()));
+        tools.sort(Comparator.comparing(ToolContext::getName));
+
+        context.setMemory(memory);
+        context.setKnowledge(knowledge);
+        context.setTools(tools);
         return context;
     }
 

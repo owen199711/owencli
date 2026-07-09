@@ -1,0 +1,82 @@
+# Context-OS 独立配置文件（独立于 Spring application.yml）
+# 支持 ${ENV_VAR:default} 环境变量替换
+# ConfigManager 每 30s 检测 mtime 变化自动热加载
+# 参考 DeerFlow AppConfig + ExtensionsConfig 设计
+
+context-os:
+  # ── Pipeline Middleware Chain ──
+  pipeline:
+    middlewares:
+      - name: intent
+        enabled: true
+        order: 100
+      - name: policy
+        enabled: true
+        order: 200
+      - name: build
+        enabled: true
+        order: 300
+      - name: optimize
+        enabled: true
+        order: 400
+      - name: package
+        enabled: true
+        order: 500
+      - name: llm
+        enabled: true
+        order: 600
+      - name: feedback
+        enabled: true
+        order: 700
+      - name: reflect
+        enabled: true
+        order: 800
+      # 用户可以在这里插入自定义 Middleware：
+      # - name: my-custom
+      #   enabled: true
+      #   order: 150
+
+  # ── LLM ──
+  llm:
+    provider: deepseek               # deepseek | openai | anthropic
+    api-key: ${DEEPSEEK_API_KEY:}
+    model: deepseek-chat
+    max-tokens: 4096
+
+  # ── Embedding ──
+  embedding:
+    mode: auto                       # auto | local | api | ollama | bm25 | disable
+    api:
+      endpoint: http://embedding-service:8080
+      api-key: ""
+      model: text-embedding-3-small
+    local:
+      model: bge-small.onnx
+      model-path: ./models/bge-small.onnx
+    ollama:
+      endpoint: http://localhost:11434
+      model: nomic-embed-text
+
+  # ── Memory ──
+  memory:
+    working-memory:
+      max-tokens: 32000
+    short-term:
+      ttl-hours: 24
+    long-term:
+      max-items: 1000
+      consolidation-interval-min: 60
+
+  # ── Store ──
+  store:
+    provider: sqlite                 # sqlite | postgresql | h2
+    db-path: ./data/context_os.db
+    postgresql:
+      url: jdbc:postgresql://localhost:5432/context_os
+      user: ${PG_USER:app}
+      password: ${PG_PASSWORD:secret}
+
+  # ── Trace ──
+  trace:
+    enabled: true
+    storage-dir: ./data/traces

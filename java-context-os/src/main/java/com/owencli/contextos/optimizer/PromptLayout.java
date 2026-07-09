@@ -82,21 +82,22 @@ public class PromptLayout {
         if (ctx.getMemory() != null) {
             // Learned behaviors shown first
             for (var mem : ctx.getMemory()) {
-                if (mem.getType() == MemoryType.LEARNED_BEHAVIOR) {
-                    historyLines.append("- ").append(mem.getContent()).append("\n");
-                }
+                String typeLabel = mem.getType() != null ? mem.getType().getValue() : "unknown";
+                memBuilder.append("- [").append(typeLabel)
+                        .append("] ").append(mem.getContent()).append("\n");
             }
-            // Then LTM + Episodic
-            for (var mem : ctx.getMemory()) {
-                if (mem.getType() != MemoryType.FACT && mem.getType() != MemoryType.CONVERSATION
-                        && mem.getType() != MemoryType.LEARNED_BEHAVIOR) {
-                    historyLines.append("- [").append(mem.getType().getValue()).append("] ")
-                            .append(mem.getContent()).append("\n");
-                }
-            }
+            sections.put("memory", memBuilder.toString());
+            prompt.append(memBuilder).append("\n");
         }
-        if (!historyLines.isEmpty()) {
-            memoryBlock.append("\nHistory:\n").append(historyLines);
+
+        // 4. Knowledge
+        if (ctx.getKnowledge() != null && !ctx.getKnowledge().isEmpty()) {
+            var knBuilder = new StringBuilder("Knowledge:\n");
+            for (var kn : ctx.getKnowledge()) {
+                knBuilder.append(kn.getContent()).append("\n");
+            }
+            sections.put("knowledge", knBuilder.toString());
+            prompt.append(knBuilder).append("\n");
         }
 
         // 2c. Recent conversation
