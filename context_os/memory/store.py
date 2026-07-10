@@ -380,68 +380,6 @@ class SQLiteStore:
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
-    # ── 情景记忆 ────────────────────────────────────────────────
-
-    async def save_episode(
-        self,
-        scene: str,
-        action: str,
-        result: str,
-        feedback: str = "",
-        related_files: Optional[list[str]] = None,
-        tags: Optional[list[str]] = None,
-        user_id: str = "anonymous",
-    ) -> str:
-        """保存一条情景记忆。"""
-        id = uuid.uuid4().hex
-        if not self._conn:
-            await self._fallback_save(id, "episodic", f"{scene}\n{action}\n{result}", None, user_id, {
-                "scene": scene, "action": action, "result": result,
-                "feedback": feedback, "tags": tags or [],
-            })
-            return id
-
-        await self._conn.execute(
-            """INSERT INTO episodes (id, scene, action, result, feedback, related_files, tags, user_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (id, scene, action, result, feedback,
-             json.dumps(related_files or []), json.dumps(tags or []), user_id),
-        )
-        await self._conn.commit()
-        logger.debug("Episode saved: id=%s, scene=%s", id, scene[:50])
-        return id
-
-    async def query_episodes(
-        self,
-        tags: Optional[list[str]] = None,
-        user_id: Optional[str] = None,
-        top_k: int = 10,
-    ) -> list[dict[str, Any]]:
-        """查询情景记忆。"""
-        if not self._conn:
-            return self._fallback_query("episodic", top_k)
-
-        conditions: list[str] = []
-        params: list[Any] = []
-
-        if tags:
-            # SQLite 中 tags 存为 JSON 数组，用 LIKE 做简单匹配
-            tag_conditions = " OR ".join("tags LIKE ?" for _ in tags)
-            conditions.append(f"({tag_conditions})")
-            params.extend([f"%{t}%" for t in tags])
-        if user_id:
-            conditions.append("user_id = ?")
-            params.append(user_id)
-
-        where = " AND ".join(conditions) if conditions else "1=1"
-
-        cursor = await self._conn.execute(
-            f"SELECT * FROM episodes WHERE {where} ORDER BY timestamp DESC LIMIT ?",
-            [*params, top_k],
-        )
-        rows = await cursor.fetchall()
-        return [self._row_to_dict(r) for r in rows]
-
     # ── 语义记忆（知识图谱） ──────────────────────────────────
 
     async def save_concept(
