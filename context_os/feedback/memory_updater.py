@@ -69,13 +69,23 @@ class MemoryUpdater:
             user_id=user_id,
         )
 
-        # 3. 长期记忆：高质量回答才存储
-        if metrics.reward_score >= 0.7:
+        # 3. 长期记忆：高质量回答 + 状态更新无条件存储
+        store_ltm = metrics.reward_score >= 0.7
+        # 状态更新类任务（AGENT intent）始终存储原始数据
+        is_state_update = task.intent.value in ("agent", "coding", "workflow")
+        if is_state_update:
+            store_ltm = True  # 无条件存储状态变更数据
+
+        if store_ltm:
+            # 状态更新：存原文（不加 "Task:" 包装，便于检索时匹配）
+            ltm_content = task.raw_input if is_state_update else (
+                f"Task: {task.raw_input}\nResolution: {response[:500]}"
+            )
             await self.ltm.save(
-                content=f"Task: {task.raw_input}\nResolution: {response[:500]}",
+                content=ltm_content,
                 memory_type="long_term",
                 metadata={
-                    "category": "task_resolution",
+                    "category": "state_update" if is_state_update else "task_resolution",
                     "intent": task.intent.value,
                     "reward": metrics.reward_score,
                     "task_id": task.id,

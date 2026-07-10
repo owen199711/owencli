@@ -84,15 +84,28 @@ class QualityEvaluator:
 
     async def _rate_quality(self, prompt: str, response: str) -> float:
         """调用 LLM 对回复质量评分 0-1。"""
+        # 短回复（确认/应答类）给中等偏上默认分，避免被误判为 0
+        if len(response.strip()) < 50:
+            logger.debug("Short response detected (%d chars), using heuristic score", len(response))
+            return 0.7
+
         try:
             eval_prompt = (
-                "Rate the following AI response on a scale of 0.0 to 1.0.\n"
-                "Consider: accuracy, completeness, clarity, helpfulness.\n"
-                "Return ONLY a number between 0 and 1.\n\n"
-                f"Response: {response[:2000]}"
+                "Rate the quality of the following AI response on a scale of 0.0 to 1.0.\n"
+                "Consider accuracy, completeness, clarity, and helpfulness.\n"
+                "For simple acknowledgments or confirmations that are appropriate, use 0.7-0.9.\n"
+                "Return ONLY a single number between 0 and 1, no extra text.\n\n"
+                f"Response:\n{response[:2000]}"
             )
             result = await self.llm_client.complete(eval_prompt, max_tokens=50, temperature=0.3)
-            return max(0.0, min(1.0, float(str(result).strip())))
+            text = str(result).strip()
+            # 提取第一个浮点数
+            import re
+            match = re.search(r"(\d+\.?\d*)", text)
+            if match:
+                return max(0.0, min(1.0, float(match.group(1))))
+            logger.warning("Could not parse quality score from: %s", text[:100])
+            return 0.7
         except Exception as e:
             logger.warning("Quality rating failed: %s", e)
             return 0.5

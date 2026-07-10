@@ -94,7 +94,7 @@ class ContextBuilder:
             if ContextFlag.MEMORY in flags:
                 memory_task = asyncio.create_task(
                     self.long_term_memory.retrieve(
-                        task.raw_input, top_k=5, intent=task.intent.value,
+                        task.raw_input, top_k=25, intent=task.intent.value,
                     )
                 )
                 collect_tasks.append(memory_task)

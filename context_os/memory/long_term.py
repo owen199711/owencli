@@ -216,8 +216,18 @@ class LongTermMemory:
 
         # ── 4. 排序返回 ──
         scored.sort(key=lambda x: x[0], reverse=True)
+
+        # 自适应 top_k：候选数多时自动扩量，确保覆盖充分
+        effective_top_k = top_k
+        if len(scored) > 50:
+            effective_top_k = min(top_k * 4, len(scored), 50)
+            logger.debug(
+                "Adaptive top_k: %d -> %d (candidates=%d)",
+                top_k, effective_top_k, len(scored),
+            )
+
         top = []
-        for _, r, _, _ in scored[:top_k]:
+        for _, r, _, _ in scored[:effective_top_k]:
             try:
                 top.append(MemoryItem(**r))
             except Exception as e:
@@ -228,9 +238,9 @@ class LongTermMemory:
                 continue
 
         logger.info(
-            "LTM hybrid retrieved: query='%s...', top_k=%d, total_candidates=%d, "
+            "LTM hybrid retrieved: query='%s...', top_k=%d (eff=%d), total_candidates=%d, "
             "top_sem=%.3f, top_kw=%.3f, intent=%s",
-            query[:50], top_k, len(all_results),
+            query[:50], top_k, len(top), len(all_results),
             scored[0][2] if scored else 0,
             scored[0][3] if scored else 0,
             intent or "none",
@@ -279,12 +289,11 @@ class LongTermMemory:
         """
         mem = await self.store.get_memory(memory_id)
         if mem:
-            new_score = (mem.get("relevance_score") or 0.0) + delta
-            await self.store._conn.execute(
+            new_score = min((mem.get("relevance_score") or 0.0) + delta, 1.0)
+            await self.store.execute(
                 "UPDATE memories SET relevance_score = ? WHERE id = ?",
-                (min(new_score, 1.0), memory_id),
+                [new_score, memory_id],
             )
-            await self.store._conn.commit()
             logger.debug("LTM relevance updated: id=%s, new_score=%.2f", memory_id, new_score)
 
     @staticmethod
@@ -413,18 +422,18 @@ class LongTermMemory:
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=threshold_days)
 
-        if not self.store._conn:
+        if not self.store.is_connected:
             return 0
 
-        cursor = await self.store._conn.execute(
+        cursor = await self.store.execute(
             "DELETE FROM memories "
             "WHERE type = 'long_term' "
+            "AND user_id = ? "
             "AND timestamp < ? "
             "AND access_count < ? "
             "AND relevance_score < 0.3",
-            (cutoff.isoformat(), min_access_count),
+            [self.user_id, cutoff.isoformat(), min_access_count],
         )
-        await self.store._conn.commit()
         count = cursor.rowcount
 
         if count > 0:

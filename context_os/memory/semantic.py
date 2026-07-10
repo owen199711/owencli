@@ -73,14 +73,13 @@ class SemanticMemory:
         Returns:
             概念字典或 None。
         """
-        if not self.store._conn:
+        if not self.store.is_connected:
             return None
 
-        cursor = await self.store._conn.execute(
-            "SELECT * FROM concepts WHERE name = ?", (name,),
+        rows = await self.store.query(
+            "SELECT * FROM concepts WHERE name = ?", [name],
         )
-        row = await cursor.fetchone()
-        return self.store._row_to_dict(row) if row else None
+        return self.store._row_to_dict(rows[0]) if rows else None
 
     # ── 关系管理 ────────────────────────────────────────────────
 
@@ -174,7 +173,7 @@ class SemanticMemory:
         Returns:
             路径上的节点和关系序列。
         """
-        if not self.store._conn:
+        if not self.store.is_connected:
             return []
 
         # BFS 搜索
@@ -186,19 +185,18 @@ class SemanticMemory:
             last_node = path[-1]["name"]
 
             if last_node == target:
-                logger.info("Shortest path found: %s -> %s, length=%d", source, target, len(path))
+                logger.debug("Shortest path found: %s -> %s, length=%d", source, target, len(path))
                 return path
 
             # 查询从 last_node 出发的所有关系
-            cursor = await self.store._conn.execute(
-                "SELECT cr.relation_type, c.name AS neighbor, c.id "
+            rows = await self.store.query(
+                "SELECT cr.relation_type, ct.name AS neighbor, ct.id "
                 "FROM concept_relations cr "
                 "JOIN concepts cs ON cr.source_id = cs.id "
                 "JOIN concepts ct ON cr.target_id = ct.id "
                 "WHERE cs.name = ?",
-                (last_node,),
+                [last_node],
             )
-            rows = await cursor.fetchall()
 
             for r in rows:
                 neighbor = r["neighbor"]

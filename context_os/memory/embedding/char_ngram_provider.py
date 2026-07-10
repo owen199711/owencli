@@ -3,8 +3,16 @@
 256 维向量，零依赖，纯算法。
 """
 from __future__ import annotations
-import math, re
+import hashlib
+import math
+import re
 from context_os.memory.embedding import EmbeddingProvider
+
+
+def _deterministic_hash(s: str) -> int:
+    """确定性散列，不受 PYTHONHASHSEED 影响，跨进程可复现。"""
+    return int.from_bytes(hashlib.sha256(s.encode()).digest()[:8], "big")
+
 
 class CharNGramProvider(EmbeddingProvider):
     DIM = 256
@@ -34,9 +42,9 @@ class CharNGramProvider(EmbeddingProvider):
         for word in words:
             for i in range(len(word) - 2):
                 tri = word[i:i+3]
-                idx = abs(hash(tri)) % self.DIM
+                idx = _deterministic_hash(tri) % self.DIM
                 vec[idx] += 1.0
-            idx = abs(hash(word)) % self.DIM
+            idx = _deterministic_hash(word) % self.DIM
             vec[idx] += 0.8
         # Log(1+freq) 归一化
         for i in range(self.DIM):

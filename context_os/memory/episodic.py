@@ -66,7 +66,7 @@ class EpisodicMemory:
             tags=tags,
             user_id=user_id or self.user_id,
         )
-        logger.info(
+        logger.debug(
             "Episode recorded: id=%s, scene='%s', feedback=%s, tags=%s",
             ep_id, scene[:60], feedback or "none", tags,
         )
@@ -153,7 +153,7 @@ class EpisodicMemory:
             user_id=self.user_id,
             top_k=top_k,
         )
-        logger.info(
+        logger.debug(
             "Episode recall: query='%s...', tags=%s, results=%d",
             scene_query[:50], tags, len(results),
         )
@@ -203,15 +203,14 @@ class EpisodicMemory:
         Returns:
             是否更新成功。
         """
-        if not self.store._conn:
+        if not self.store.is_connected:
             return False
 
-        cursor = await self.store._conn.execute(
+        cursor = await self.store.execute(
             "UPDATE episodes SET feedback = ? WHERE id = ?",
-            (feedback, episode_id),
+            [feedback, episode_id],
         )
-        await self.store._conn.commit()
         success = cursor.rowcount > 0
         if success:
-            logger.info("Episode feedback updated: id=%s, feedback='%s'", episode_id, feedback[:50])
+            logger.debug("Episode feedback updated: id=%s", episode_id)
         return success

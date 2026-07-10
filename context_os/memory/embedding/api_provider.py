@@ -3,10 +3,12 @@
 OpenAI-compatible API 格式。
 """
 from __future__ import annotations
-import json, logging
+import json
+import logging
 from context_os.memory.embedding import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
+
 
 class APIProvider(EmbeddingProvider):
     def __init__(self, endpoint: str, api_key: str = "", model: str = "text-embedding-3-small"):
@@ -14,7 +16,20 @@ class APIProvider(EmbeddingProvider):
         self.api_key = api_key
         self.model = model
         self._dim = 0
+        self._session = None
         logger.info("APIProvider: endpoint=%s, model=%s", endpoint, model)
+
+    def _get_session(self):
+        if self._session is None:
+            import aiohttp
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        """关闭 HTTP 会话，释放连接池。"""
+        if self._session:
+            await self._session.close()
+            self._session = None
 
     @property
     def dim(self): return self._dim
@@ -26,14 +41,15 @@ class APIProvider(EmbeddingProvider):
         if self.api_key: headers["Authorization"] = f"Bearer {self.api_key}"
         payload = {"model": self.model, "input": text}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.endpoint, json=payload, headers=headers, timeout=30) as resp:
-                    if resp.status != 200:
-                        body = await resp.text()
-                        logger.warning("API embedding failed: status=%d, body=%s", resp.status, body[:200])
-                        return []
-                    data = await resp.json()
-                    return self._parse(data)
+            async with self._get_session().post(
+                self.endpoint, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    logger.warning("API embedding failed: status=%d, body=%s", resp.status, body[:200])
+                    return []
+                data = await resp.json()
+                return self._parse(data)
         except Exception as e:
             logger.warning("API embedding error: %s", e)
             return []

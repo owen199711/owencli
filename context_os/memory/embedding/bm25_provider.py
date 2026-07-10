@@ -3,8 +3,16 @@
 256 维向量 + 停用词 + IDF + TF 归一化 + 中英文 Token 提取
 """
 from __future__ import annotations
-import math, re
+import hashlib
+import math
+import re
 from context_os.memory.embedding import EmbeddingProvider
+
+
+def _deterministic_hash(s: str) -> int:
+    """确定性散列，不受 PYTHONHASHSEED 影响，跨进程可复现。"""
+    return int.from_bytes(hashlib.sha256(s.encode()).digest()[:8], "big")
+
 
 _STOP_WORDS = frozenset({
     "的","了","在","是","我","有","和","就","不","人","都","一","一个","上","也",
@@ -36,7 +44,7 @@ class BM25Provider(EmbeddingProvider):
         max_tf = max(tf_map.values())
         for token, tf in tf_map.items():
             tf_norm = tf / (0.5 + 0.5 * tf / max_tf)
-            h = abs(hash(token))
+            h = _deterministic_hash(token)
             idx1 = h % self.DIM
             idx2 = (h * 31 + 17) % self.DIM
             idf = self._get_idf(token)
@@ -61,7 +69,7 @@ class BM25Provider(EmbeddingProvider):
 
     def _get_idf(self, token: str) -> float:
         if token not in self._idf_cache:
-            h = abs(hash(token))
+            h = _deterministic_hash(token)
             sim_df = 1.0 + (h % 100) / 100.0
             self._idf_cache[token] = math.log(1.0 + (1000.0 - sim_df) / sim_df)
         return self._idf_cache[token]

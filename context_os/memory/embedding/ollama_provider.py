@@ -3,17 +3,32 @@
 POST http://localhost:11434/api/embeddings
 """
 from __future__ import annotations
-import json, logging
+import json
+import logging
 from context_os.memory.embedding import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
+
 
 class OllamaProvider(EmbeddingProvider):
     def __init__(self, endpoint: str = "http://localhost:11434", model: str = "nomic-embed-text"):
         self.endpoint = endpoint.rstrip("/") + "/api/embeddings"
         self.model = model
         self._dim = 0
+        self._session = None
         logger.info("OllamaProvider: endpoint=%s, model=%s", endpoint, model)
+
+    def _get_session(self):
+        if self._session is None:
+            import aiohttp
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        """关闭 HTTP 会话，释放连接池。"""
+        if self._session:
+            await self._session.close()
+            self._session = None
 
     @property
     def dim(self): return self._dim
@@ -27,16 +42,17 @@ class OllamaProvider(EmbeddingProvider):
             return []
         payload = {"model": self.model, "prompt": text}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.endpoint, json=payload, timeout=30) as resp:
-                    if resp.status != 200:
-                        body = await resp.text()
-                        logger.warning("Ollama failed: status=%d, body=%s", resp.status, body[:200])
-                        return []
-                    data = await resp.json()
-                    emb = data.get("embedding", [])
-                    if emb: self._dim = len(emb)
-                    return emb
+            async with self._get_session().post(
+                self.endpoint, json=payload, timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    logger.warning("Ollama failed: status=%d, body=%s", resp.status, body[:200])
+                    return []
+                data = await resp.json()
+                emb = data.get("embedding", [])
+                if emb: self._dim = len(emb)
+                return emb
         except Exception as e:
             logger.warning("Ollama error: %s", e)
             return []

@@ -465,7 +465,13 @@ async def run_comparison(llm_client: Any, db_path: Optional[str] = None):
 
     # ── 初始化两个 Agent ──
     simple = SimpleAgent(llm_client)
-    memory = MemoryAgent(llm_client, db_path)
+
+    # 创建嵌入引擎（优先本地语义模型，自动降级到 BM25）
+    from context_os.memory.embedding import EmbeddingServiceFactory
+    embedding_provider = EmbeddingServiceFactory().create("auto")
+    print(f"[Embedding] 嵌入引擎: {type(embedding_provider).__name__}")
+
+    memory = MemoryAgent(llm_client, db_path, embedding_provider=embedding_provider)
 
     # ── 对比报告 ──
     report_lines = [

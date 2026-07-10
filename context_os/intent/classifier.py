@@ -42,11 +42,26 @@ class IntentClassifier:
          IntentType.SEARCH, GoalType.EXPLAIN, 0.7),
         (["plan", "设计", "方案", "计划", "架构"],
          IntentType.PLANNING, GoalType.GENERATE, 0.7),
-        (["explain", "what is", "什么是", "介绍", "解释", "how to"],
-         IntentType.QA, GoalType.EXPLAIN, 0.7),
-        (["summarize", "总结", "摘要", "概括"],
+        # ── 状态更新 / 信息录入类（关键：包含 MEMORY 标志）──
+        # 财务关键词
+        (["收入", "支出", "赚了", "花了", "转账", "入账", "到账", "退款", "奖金",
+          "报销", "房租", "入金", "出金", "存入", "取款", "结余", "利息",
+          "交了", "付了", "余额", "冲正", "回滚", "花费"],
+         IntentType.AGENT, GoalType.GENERATE, 0.75),
+        # 配置/修改操作
+        (["改为", "更新", "设置", "修改", "重置", "初始状态", "初始化", "记住", "记录",
+          "配", "选项", "回滚"],
+         IntentType.AGENT, GoalType.GENERATE, 0.75),
+        # 关系变更
+        (["关系", "认识", "分手", "在一起", "结婚", "合作", "和解", "怀疑", "和好"],
+         IntentType.AGENT, GoalType.GENERATE, 0.75),
+        # QA 类（降低到状态更新之后，避免被状态更新误命中）
+        (["explain", "what is", "什么是", "介绍", "解释", "how to", "为什么", "原因", "how does",
+          "请问", "多少", "告诉我", "分析", "请回答", "请分别", "怎么"],
+         IntentType.QA, GoalType.EXPLAIN, 0.65),
+        (["summarize", "总结", "摘要", "概括", "归纳"],
          IntentType.QA, GoalType.SUMMARIZE, 0.7),
-        (["compare", "区别", "对比", "vs", "versus", "与"],
+        (["compare", "区别", "对比", "vs", "versus", "与", "比较"],
          IntentType.QA, GoalType.COMPARE, 0.7),
         (["analyze", "分析", "数据分析", "chart", "图表"],
          IntentType.DATA_ANALYSIS, GoalType.EXPLAIN, 0.7),
@@ -54,10 +69,18 @@ class IntentClassifier:
          IntentType.WORKFLOW, GoalType.GENERATE, 0.7),
     ]
 
-    _CLASSIFY_PROMPT = """Classify the following user request into intent and goal categories.
+    _CLASSIFY_PROMPT = """Classify the following user input into intent and goal.
 
 Available intents: {intents}
 Available goals: {goals}
+
+Rules:
+- Use "agent" for state updates (financial transactions, config changes, relationship updates,
+  information recording). These are inputs that add/modify state, NOT questions.
+- Use "qa" only for actual questions asking for information/explanation.
+- Use "data_analysis" for requests to analyze or compute from existing data.
+- Use "debugging" for error/bug troubleshooting.
+- Use "coding" for code generation/writing tasks.
 
 Return ONLY valid JSON with fields: intent, goal, confidence
 - intent: one of the available intents above
@@ -133,17 +156,42 @@ JSON:"""
         best_match: Optional[tuple[IntentType, GoalType, float]] = None
         best_score = 0
 
+        # 检测问句信号（降低状态更新规则的置信度）
+        has_question_signal = any(kw in input_lower for kw in (
+            "?", "？", "多少", "什么", "怎么", "如何", "为什么", "请分析", "请回答",
+            "告诉我", "请分别", "请问",
+        ))
+
         for keywords, intent, goal, base_confidence in self._INTENT_RULES:
             match_count = sum(1 for kw in keywords if kw in input_lower)
             if match_count > 0:
                 # 命中越多关键词，置信度越高，但不超过 base_confidence + 0.2
                 score = min(base_confidence + match_count * 0.1, 0.95)
+                # 状态更新规则 + 问句信号 → 降权
+                if intent == IntentType.AGENT and has_question_signal:
+                    score *= 0.6  # 显著降低优先级，让 QA 等规则胜出
                 if score > best_score:
                     best_score = score
                     best_match = (intent, goal, score)
 
         if best_match:
             return best_match
+
+        # ── 启发式：含数字但非问句 → 可能是状态更新 ──
+        has_number = any(ch.isdigit() for ch in user_input)
+        has_question = any(kw in input_lower for kw in (
+            "?", "？", "多少", "什么", "怎么", "如何", "为什么", "请分析", "请回答",
+        ))
+        has_fin_kw = any(kw in input_lower for kw in (
+            "元", "￥", "$", "收入", "支出", "花了", "交", "付", "存",
+            "余额", "到账", "赚", "买", "卖", "%", "ms", "mb", "gb",
+        ))
+        if has_number and has_fin_kw and not has_question:
+            logger.debug(
+                "Heuristic: number+financial without question → agent "
+                "(input: %s...)", user_input[:60],
+            )
+            return IntentType.AGENT, GoalType.GENERATE, 0.65
 
         # 默认兜底
         logger.debug("No rules matched, defaulting to QA/EXPLAIN")

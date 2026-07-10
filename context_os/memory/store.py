@@ -92,6 +92,90 @@ class SQLiteStore:
     );
     CREATE INDEX IF NOT EXISTS idx_relations_source ON concept_relations(source_id);
     CREATE INDEX IF NOT EXISTS idx_relations_target ON concept_relations(target_id);
+
+    -- FactMemory: 版本化事实 KV 存储
+    CREATE TABLE IF NOT EXISTS facts (
+        id              TEXT PRIMARY KEY,
+        content         TEXT NOT NULL,
+        category        TEXT NOT NULL,
+        confidence      REAL NOT NULL DEFAULT 1.0,
+        version         INTEGER NOT NULL DEFAULT 1,
+        user_id         TEXT NOT NULL,
+        source          TEXT,
+        metadata        TEXT,
+        current_value   TEXT,
+        history         TEXT,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+    );
+
+    -- ProceduralMemory: 工作流程与步骤模式
+    CREATE TABLE IF NOT EXISTS procedures (
+        id              TEXT PRIMARY KEY,
+        user_id         TEXT NOT NULL,
+        name            TEXT NOT NULL,
+        description     TEXT,
+        steps           TEXT NOT NULL,
+        tags            TEXT,
+        success_count   INTEGER DEFAULT 0,
+        total_count     INTEGER DEFAULT 0,
+        last_used       TEXT,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+    );
+
+    -- ReflectionMemory: Agent 自我反思与经验教训
+    CREATE TABLE IF NOT EXISTS reflections (
+        id              TEXT PRIMARY KEY,
+        user_id         TEXT NOT NULL,
+        task_type       TEXT,
+        success         INTEGER NOT NULL DEFAULT 1,
+        root_cause      TEXT,
+        lesson_learned  TEXT,
+        preventive_action TEXT,
+        metadata        TEXT,
+        created_at      TEXT NOT NULL
+    );
+
+    -- TaskMemory: 任务执行记录
+    CREATE TABLE IF NOT EXISTS task_records (
+        id              TEXT PRIMARY KEY,
+        user_id         TEXT NOT NULL,
+        task_type       TEXT,
+        intent          TEXT,
+        status          TEXT NOT NULL DEFAULT 'pending',
+        input           TEXT,
+        output          TEXT,
+        error           TEXT,
+        token_used      INTEGER DEFAULT 0,
+        duration_ms     INTEGER DEFAULT 0,
+        metadata        TEXT,
+        created_at      TEXT NOT NULL,
+        completed_at    TEXT
+    );
+
+    -- ToolExperienceMemory: 工具调用经验与成功率追踪
+    CREATE TABLE IF NOT EXISTS tool_experience (
+        id              TEXT PRIMARY KEY,
+        user_id         TEXT NOT NULL,
+        tool_name       TEXT NOT NULL,
+        success         INTEGER NOT NULL,
+        error_type      TEXT,
+        duration_ms     INTEGER DEFAULT 0,
+        scenario        TEXT,
+        input_preview   TEXT,
+        output_preview  TEXT,
+        created_at      TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tool_stats (
+        tool_name       TEXT,
+        user_id         TEXT,
+        total_calls     INTEGER DEFAULT 0,
+        success_calls   INTEGER DEFAULT 0,
+        avg_duration_ms REAL DEFAULT 0,
+        PRIMARY KEY (tool_name, user_id)
+    );
     """
 
     def __init__(self, db_path: Optional[str] = None):
@@ -121,11 +205,8 @@ class SQLiteStore:
             await self._conn.execute("PRAGMA journal_mode=WAL")
             await self._conn.execute("PRAGMA foreign_keys=ON")
 
-            # 执行建表 DDL
-            for statement in self._DDL.strip().split(";"):
-                stmt = statement.strip()
-                if stmt:
-                    await self._conn.execute(stmt)
+            # 执行建表 DDL（使用 executescript 避免 ; 分割问题）
+            await self._conn.executescript(self._DDL)
             await self._conn.commit()
 
             logger.info("SQLite database initialized: %s", self._db_path)
@@ -222,7 +303,7 @@ class SQLiteStore:
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         query_text: Optional[str] = None,
-        embedding: Optional[list[float]] = None,
+        embedding: Optional[list[float]] = None,  # 预留，实际向量检索由 LongTermMemory.retrieve() 完成
         top_k: int = 10,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -243,10 +324,14 @@ class SQLiteStore:
             conditions.append("user_id = ?")
             params.append(user_id)
         if query_text:
-            conditions.append("content LIKE ?")
-            params.append(f"%{query_text}%")
+            # 转义 LIKE 通配符 % 和 _，避免意外的模糊匹配
+            escaped_text = query_text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            conditions.append("content LIKE ? ESCAPE '\\'")
+            params.append(f"%{escaped_text}%")
 
         where = " AND ".join(conditions) if conditions else "1=1"
+        # 过滤已过期记忆
+        where += " AND (expires_at IS NULL OR expires_at > datetime('now'))"
 
         query = (
             f"SELECT * FROM memories WHERE {where} "
@@ -286,8 +371,13 @@ class SQLiteStore:
         if self._conn:
             await self._conn.execute("DELETE FROM memories")
             await self._conn.commit()
-        if self._fallback:
-            self._fallback.clear()
+        # 清理文件系统降级存储
+        if self._FALLBACK_DIR.exists():
+            for path in self._FALLBACK_DIR.glob("*.json"):
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
         logger.info("All memories cleared")
 
     async def cleanup_expired(self) -> int:
@@ -303,6 +393,41 @@ class SQLiteStore:
         if count > 0:
             logger.info("Cleaned up %d expired memories", count)
         return count
+
+    # ── 通用 execute / query（供子 Memory 类型使用）──────────────
+
+    async def execute(self, sql: str, params: Optional[list] = None) -> Any:
+        """执行一条写操作 SQL（INSERT/UPDATE/DELETE），自动提交。
+
+        Args:
+            sql: SQL 语句。
+            params: 参数列表。
+
+        Returns:
+            aiosqlite Cursor 对象（可检查 rowcount）。
+        """
+        if not self._conn:
+            raise MemoryError("Store not connected – call connect() first")
+        cursor = await self._conn.execute(sql, params or [])
+        await self._conn.commit()
+        return cursor
+
+    async def query(self, sql: str, params: Optional[list] = None) -> list[dict[str, Any]]:
+        """执行一条 SELECT 查询，返回所有行为 dict 列表。
+
+        Args:
+            sql: SELECT 语句。
+            params: 参数列表。
+
+        Returns:
+            查询结果行列表，每行为 dict。
+        """
+        if not self._conn:
+            logger.warning("Store not connected, returning empty query result")
+            return []
+        cursor = await self._conn.execute(sql, params or [])
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
     # ── 情景记忆 ────────────────────────────────────────────────
 
@@ -332,7 +457,7 @@ class SQLiteStore:
              json.dumps(related_files or []), json.dumps(tags or []), user_id),
         )
         await self._conn.commit()
-        logger.info("Episode saved: id=%s, scene=%s", id, scene[:50])
+        logger.debug("Episode saved: id=%s, scene=%s", id, scene[:50])
         return id
 
     async def query_episodes(
@@ -499,7 +624,7 @@ class SQLiteStore:
         """将 aiosqlite.Row 转为普通 dict。"""
         result = dict(row)
         # 反序列化 JSON 字段
-        for key in ("metadata", "attributes", "embedding"):
+        for key in ("metadata", "attributes", "embedding", "history", "related_files", "tags", "steps"):
             if key in result and isinstance(result[key], str):
                 try:
                     result[key] = json.loads(result[key])
@@ -529,7 +654,7 @@ class SQLiteStore:
             "session_id": session_id,
             "user_id": user_id,
             "metadata": metadata or {},
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         def _write():
