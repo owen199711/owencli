@@ -42,7 +42,7 @@ class OpenAIPromptAdapter(BasePromptAdapter):
         # ── Memory ──
         if unified.memory:
             mem_lines = ["[Memory]"]
-            for item in unified.memory[:10]:
+            for item in unified.memory[:30]:
                 mem_lines.append(f"  - [{item.type.value}] {item.content[:200]}")
             sections["memory"] = "\n".join(mem_lines)
 
@@ -63,7 +63,8 @@ class OpenAIPromptAdapter(BasePromptAdapter):
         # ── Conversation ──
         if unified.conversation and unified.conversation.history:
             conv_lines = ["[Conversation]"]
-            for turn in unified.conversation.history[-20:]:
+            # Keep more history for multi-turn tracking scenarios (up to 50 turns)
+            for turn in unified.conversation.history[-50:]:
                 conv_lines.append(f"  {turn.role}: {turn.content}")
             sections["conversation"] = "\n".join(conv_lines)
 

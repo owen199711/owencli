@@ -58,8 +58,11 @@ class ContextOptimizer:
         logger.info("Optimizing context...")
 
         # Step 1: 排序
-        context.memory = self.ranker.rank_memories(context.memory, top_k=10)
-        context.knowledge = self.ranker.rank_knowledge(context.knowledge, top_k=5)
+        # top_k 与可用条数成正比，确保在大量候选时不被过度截断
+        mem_top_k = max(20, min(len(context.memory), 50))
+        kw_top_k = max(5, min(len(context.knowledge), 20))
+        context.memory = self.ranker.rank_memories(context.memory, top_k=mem_top_k)
+        context.knowledge = self.ranker.rank_knowledge(context.knowledge, top_k=kw_top_k)
 
         # Step 2: 压缩对话历史
         if context.conversation and context.conversation.history:

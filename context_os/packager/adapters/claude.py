@@ -65,7 +65,7 @@ class ClaudePromptAdapter(BasePromptAdapter):
         # ── Conversation ──
         if unified.conversation and unified.conversation.history:
             conv_parts = ["<conversation>"]
-            for turn in unified.conversation.history[-20:]:  # 最多 20 轮
+            for turn in unified.conversation.history[-50:]:  # 最多 50 轮
                 conv_parts.append(f"  <{turn.role}>{turn.content}</{turn.role}>")
             conv_parts.append("</conversation>")
             sections["conversation"] = "\n".join(conv_parts)
