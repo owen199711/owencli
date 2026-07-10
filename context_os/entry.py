@@ -30,7 +30,6 @@ from context_os.intent.classifier import IntentClassifier
 from context_os.intent.extractor import EntityExtractor
 from context_os.intent.parser import TaskParser
 from context_os.llm.client import BaseLLMClient
-from context_os.memory.episodic import EpisodicMemory
 from context_os.memory.experience import ExperienceMemory
 from context_os.memory.long_term import LongTermMemory
 from context_os.memory.semantic import SemanticMemory
@@ -110,10 +109,6 @@ class ContextOSPipeline:
             user_id=user_id,
             embedding_provider=self._embedding_provider,
         )
-        self.episodic_memory = EpisodicMemory(
-            store=self.store,
-            user_id=user_id,
-        )
         self.semantic_memory = SemanticMemory(
             store=self.store,
             user_id=user_id,
@@ -165,7 +160,6 @@ class ContextOSPipeline:
             working_memory=self.working_memory,
             short_term_memory=self.short_term_memory,
             long_term_memory=self.long_term_memory,
-            episodic_memory=self.episodic_memory,
             semantic_memory=self.semantic_memory,
             experience_memory=self.experience_memory,
             concept_worker=self.concept_worker,

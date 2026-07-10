@@ -2,9 +2,8 @@
 
 在每次 Pipeline 执行后，根据结果更新各层记忆。
 
-Phase 3: 实现统一写入决策（三层闸门 + 分流存储）
-
-新旧策略可通过 USE_NEW_STRATEGY 开关切换，直到阶段五才删除旧分支。
+Phase 3: 统一写入决策（三层闸门 + 分流存储）。
+Phase 5: 删除旧策略分支，只保留新策略。
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from typing import Any, Optional, TYPE_CHECKING
 
 from context_os.core.logger import get_logger
 from context_os.core.models import EvalMetrics, TaskSpec
-from context_os.memory.episodic import EpisodicMemory
 from context_os.memory.experience import ExperienceMemory
 from context_os.memory.long_term import LongTermMemory
 from context_os.memory.semantic import SemanticMemory
@@ -29,11 +27,6 @@ if TYPE_CHECKING:
     from context_os.feedback.concept_worker import BackgroundConceptWorker
 
 logger = get_logger(__name__)
-
-# ════════════════════════════════════════════════════════════════
-# 新旧策略开关（阶段五删除此开关和旧逻辑）
-# ════════════════════════════════════════════════════════════════
-USE_NEW_STRATEGY = True
 
 # ── Layer 1 常量 ──────────────────────────────────────────────
 _EXPLICIT_MEMORY_KEYWORDS = re.compile(
@@ -104,7 +97,6 @@ class MemoryUpdater:
         working_memory: WorkingMemory,
         short_term_memory: SessionMemory,
         long_term_memory: LongTermMemory,
-        episodic_memory: EpisodicMemory,
         semantic_memory: SemanticMemory,
         experience_memory: Optional[ExperienceMemory] = None,
         # ── Phase 3 新增依赖 ──
@@ -115,7 +107,6 @@ class MemoryUpdater:
         self.wm = working_memory
         self.stm = short_term_memory
         self.ltm = long_term_memory
-        self.epm = episodic_memory
         self.sem = semantic_memory
         self.exp = experience_memory
 
@@ -129,8 +120,8 @@ class MemoryUpdater:
         self._last_batch_time: float = time.time()
 
         logger.info(
-            "MemoryUpdater initialized (new_strategy=%s, has_concept_worker=%s)",
-            USE_NEW_STRATEGY, concept_worker is not None,
+            "MemoryUpdater initialized (has_concept_worker=%s)",
+            concept_worker is not None,
         )
 
     # ── 主入口 ─────────────────────────────────────────────────
@@ -153,14 +144,11 @@ class MemoryUpdater:
         logger.info("Updating memory from task: %s", task.id)
         self._turn_count += 1
 
-        # ── 无门槛层：Working & Session（新旧策略都执行） ──
+        # ── 无门槛层：Working & Session ──
         self._update_working(task, response)
         await self._update_session(task, response, user_id)
 
-        if USE_NEW_STRATEGY:
-            await self._update_persistent_new(task, response, metrics, user_id)
-        else:
-            await self._update_persistent_old(task, response, metrics, user_id)
+        await self._update_persistent_new(task, response, metrics, user_id)
 
         logger.info("Memory update complete for task: %s", task.id)
 
@@ -894,60 +882,6 @@ class MemoryUpdater:
             result=response[:200],
             user_id=user_id,
         )
-
-    # ════════════════════════════════════════════════════════════
-    # 旧策略（保留，阶段五删除）
-    # ════════════════════════════════════════════════════════════
-
-    async def _update_persistent_old(
-        self,
-        task: TaskSpec,
-        response: str,
-        metrics: EvalMetrics,
-        user_id: str,
-    ) -> None:
-        """旧策略：各层独立判断写入。"""
-        # 长期记忆
-        store_ltm = metrics.reward_score >= 0.7
-        is_state_update = task.intent.value in ("agent", "coding", "workflow")
-        if is_state_update:
-            store_ltm = True
-
-        if store_ltm:
-            ltm_content = task.raw_input if is_state_update else (
-                f"Task: {task.raw_input}\nResolution: {response[:500]}"
-            )
-            await self.ltm.save(
-                content=ltm_content,
-                memory_type="long_term",
-                metadata={
-                    "category": "state_update" if is_state_update else "task_resolution",
-                    "intent": task.intent.value,
-                    "reward": metrics.reward_score,
-                    "task_id": task.id,
-                },
-                user_id=user_id,
-            )
-
-        # 情景记忆
-        if metrics.success:
-            await self.epm.record_success(
-                scene=f"User requested: {task.raw_input[:100]}",
-                action=f"Agent responded with {task.intent.value} intent",
-                result=response[:200],
-                tags=[task.intent.value, "auto_logged"],
-            )
-        else:
-            await self.epm.record_failure(
-                scene=f"User requested: {task.raw_input[:100]}",
-                action=f"Attempted {task.intent.value}",
-                error=response[:200],
-                tags=[task.intent.value, "auto_logged"],
-            )
-
-        # 语义记忆
-        recent_episodes = await self.epm.get_recent_experiences(top_k=20)
-        await self.sem.abstract_from_episodes(recent_episodes)
 
     # ── 用户反馈 ───────────────────────────────────────────────
 
