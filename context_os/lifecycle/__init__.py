@@ -15,7 +15,7 @@ class MemoryLifecycle:
 
     def __init__(self, store: SQLiteStore):
         self.store = store
-        self._register_ttl_seconds = {"short_term": 86400, "long_term": 7776000}  # 1d / 90d
+        self._register_ttl_seconds = {"session": 86400, "long_term": 7776000}  # 1d / 90d
 
     async def consolidate(self, user_id: str = None) -> int:
         """合并重复记忆。"""
@@ -45,8 +45,8 @@ class MemoryLifecycle:
     async def forget(self, days: int = 90) -> int:
         """清理过期短期记忆。"""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        self.store.execute("DELETE FROM memories WHERE type='short_term' AND created_at<?", [cutoff])
-        logger.info("Forget: cleaned short-term memories older than %d days", days)
+        self.store.execute("DELETE FROM memories WHERE type='session' AND created_at<?", [cutoff])
+        logger.info("Forget: cleaned session memories older than %d days", days)
         return 0
 
     async def run_maintenance(self) -> dict:

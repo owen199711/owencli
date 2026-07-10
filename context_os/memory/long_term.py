@@ -31,21 +31,29 @@ logger = get_logger(__name__)
 # BM25 参数
 _BM25_K1 = 1.5
 _BM25_B = 0.75
-# 混合检索权重（有 embedding 时）
-_W_SEM = 0.30
-_W_KW = 0.30
+# 混合检索权重（有 embedding 时）— Phase 4 统一评分公式
+_W_SEM = 0.40
+_W_KW = 0.25
 _W_REL = 0.15
-_W_TIME = 0.15
+_W_TIME = 0.10
 _W_ACCESS = 0.10
 # 混合检索权重（无 embedding 时）
-_W_KW_ONLY = 0.40
-_W_REL_ONLY = 0.25
-_W_TIME_ONLY = 0.20
-_W_ACCESS_ONLY = 0.15
+_W_KW_ONLY = 0.55
+_W_REL_ONLY = 0.20
+_W_TIME_ONLY = 0.15
+_W_ACCESS_ONLY = 0.10
 # 时间衰减系数（每日）
 _TIME_DECAY_LAMBDA = 0.01
 # 同意图提升倍数
 _INTENT_BOOST = 1.2
+# 时间回溯检索的时间衰减系数（回溯时更弱，让旧记忆也有机会被检索）
+_TIME_DECAY_LAMBDA_EXPAND = 0.001
+# 时间回溯关键词
+_TEMPORAL_KEYWORDS = re.compile(
+    r"(?:我叫过|之前叫|原来叫|以前叫|以前设置|曾经|原来|之前|上次|"
+    r"过去|历史|old\s+name|previous|before|used\s+to|history)",
+    re.IGNORECASE,
+)
 
 
 class LongTermMemory:
@@ -67,6 +75,23 @@ class LongTermMemory:
         self.user_id = user_id
         self._embedding_provider = embedding_provider
         logger.info("LongTermMemory initialized (user=%s)", user_id)
+
+    @staticmethod
+    def detect_temporal_query(text: str) -> bool:
+        """检测是否为时间回溯查询（Phase 4.5）。
+
+        检测用户是否在询问历史信息：
+            "我叫过什么"
+            "之前叫什么"
+            "以前设置过什么"
+
+        Args:
+            text: 用户输入文本。
+
+        Returns:
+            True 如果是时间回溯查询。
+        """
+        return bool(_TEMPORAL_KEYWORDS.search(text))
 
     async def save(
         self,
@@ -117,6 +142,7 @@ class LongTermMemory:
         memory_type: Optional[str] = None,
         embedding: Optional[list[float]] = None,
         intent: Optional[str] = None,
+        expand_history: bool = False,
     ) -> list[MemoryItem]:
         """检索长期记忆（增强型混合检索）。
 
@@ -126,6 +152,7 @@ class LongTermMemory:
         额外:
             - 同 intent 记忆获 1.2x 提升
             - 有 embedding 时启用语义检索，无时退化为 BM25+时效+相关性
+            - expand_history=True 时，时间衰减削弱 10x，候选量扩大 3x
 
         Args:
             query: 检索查询文本。
@@ -133,6 +160,7 @@ class LongTermMemory:
             memory_type: 筛选特定子类型。
             embedding: 直接传入向量进行相似度检索。
             intent: 当前任务意图，用于匹配 metadata.intent（如 "qa"、"planning"）。
+            expand_history: 是否启用时间回溯检索（Phase 4.5）。
 
         Returns:
             MemoryItem 列表，按综合得分降序排列。
@@ -146,11 +174,13 @@ class LongTermMemory:
                 embedding = None
 
         # ── 2. 查候选记忆 ──
+        # expand_history 时扩大候选池 3x
+        candidate_limit = 1500 if expand_history else 500
         all_results = await self.store.query_memories(
             type=memory_type or "long_term",
             user_id=self.user_id,
             query_text=query if embedding is None else None,
-            top_k=500,
+            top_k=candidate_limit,
         )
 
         if not all_results:
@@ -176,7 +206,7 @@ class LongTermMemory:
             if query_lower:
                 kw_score = self._bm25_score(query_lower, all_content, i)
 
-            # 时效衰减
+            # 时效衰减（expand_history 时使用更弱的衰减系数）
             days_old = 0
             ts_str = r.get("timestamp")
             if ts_str:
@@ -185,7 +215,8 @@ class LongTermMemory:
                     days_old = (now - ts).days
                 except Exception:
                     pass
-            time_decay = math.exp(-_TIME_DECAY_LAMBDA * max(0, days_old))
+            decay_lambda = _TIME_DECAY_LAMBDA_EXPAND if expand_history else _TIME_DECAY_LAMBDA
+            time_decay = math.exp(-decay_lambda * max(0, days_old))
 
             # 相关性和访问频率
             relevance = min(r.get("relevance_score") or 0.0, 1.0)
@@ -402,6 +433,169 @@ class LongTermMemory:
             logger.debug("LTM consolidate: no duplicates found")
 
         return len(to_delete)
+
+    # ── Fact（原 FactMemory，已合并到 metadata） ──────────────
+
+    async def save_fact(
+        self,
+        fact_id: str,
+        content: str,
+        category: str,
+        confidence: float = 1.0,
+        source: str = "",
+        user_id: Optional[str] = None,
+    ) -> str:
+        """保存/更新一条版本化事实（原 FactMemory.set）。
+
+        content 存入 memories.content，其余字段（category/confidence/version/
+        source/history）均放入 metadata JSON。版本号自动递增，旧值存入 history
+        数组，便于后续时间回溯检索。
+
+        Args:
+            fact_id: 事实 ID（如 entity_key，用于去重和更新）。
+            content: 事实内容/当前值。
+            category: 类别（如 "user_profile", "project_config"）。
+            confidence: 置信度 (0-1)。
+            source: 来源说明。
+            user_id: 用户 ID。
+
+        Returns:
+            记忆 ID。
+        """
+        uid = user_id or self.user_id
+        import json
+        import uuid
+        from datetime import datetime, timezone
+
+        # 查找已有记录
+        existing = await self.store.query_memories(
+            type="long_term",
+            user_id=uid,
+            top_k=200,
+        )
+        existing_record = None
+        for r in existing:
+            meta = r.get("metadata", {})
+            if isinstance(meta, dict) and meta.get("fact_id") == fact_id:
+                existing_record = r
+                break
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        if existing_record:
+            existing_meta = existing_record.get("metadata", {})
+            if not isinstance(existing_meta, dict):
+                existing_meta = {}
+            history = existing_meta.get("history", [])
+            history.append({
+                "value": existing_record.get("content", ""),
+                "version": existing_meta.get("version", 1),
+                "updated_at": now,
+            })
+            new_version = existing_meta.get("version", 1) + 1
+            new_meta = {
+                "category": category,
+                "fact_id": fact_id,
+                "confidence": confidence,
+                "version": new_version,
+                "source": source,
+                "history": history,
+            }
+            # 更新：用原 ID 覆盖
+            mem_id = existing_record["id"]
+            await self.store.save_memory(
+                id=mem_id,
+                type="long_term",
+                content=content,
+                user_id=uid,
+                metadata=new_meta,
+            )
+            logger.debug(
+                "Fact updated: fact_id=%s, v%d -> v%d", fact_id,
+                existing_meta.get("version", 1), new_version,
+            )
+            return mem_id
+
+        # 新事实
+        mem_id = uuid.uuid4().hex
+        new_meta = {
+            "category": category,
+            "fact_id": fact_id,
+            "confidence": confidence,
+            "version": 1,
+            "source": source,
+            "history": [],
+        }
+        await self.store.save_memory(
+            id=mem_id,
+            type="long_term",
+            content=content,
+            user_id=uid,
+            metadata=new_meta,
+        )
+        logger.info("Fact created: fact_id=%s, category=%s", fact_id, category)
+        return mem_id
+
+    async def get_fact(self, fact_id: str, user_id: Optional[str] = None) -> Optional[dict[str, Any]]:
+        """按 fact_id 获取事实（含版本和 history）。
+
+        Args:
+            fact_id: 事实 ID。
+            user_id: 用户 ID。
+
+        Returns:
+            事实记录 dict（含 content, metadata.version, metadata.history 等），或 None。
+        """
+        uid = user_id or self.user_id
+        results = await self.store.query_memories(
+            type="long_term",
+            user_id=uid,
+            top_k=200,
+        )
+        for r in results:
+            meta = r.get("metadata", {})
+            if isinstance(meta, dict) and meta.get("fact_id") == fact_id:
+                return r
+        return None
+
+    async def query_facts(
+        self,
+        category: Optional[str] = None,
+        limit: int = 100,
+        user_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """按类别查询事实（原 FactMemory.query）。
+
+        Args:
+            category: 类别名（可选）。
+            limit: 返回上限。
+            user_id: 用户 ID。
+
+        Returns:
+            事实记录 dict 列表。
+        """
+        uid = user_id or self.user_id
+        results = await self.store.query_memories(
+            type="long_term",
+            user_id=uid,
+            top_k=500,  # 先多取再过滤
+        )
+        facts = []
+        for r in results:
+            meta = r.get("metadata", {})
+            if not isinstance(meta, dict):
+                continue
+            if meta.get("fact_id") and meta.get("category"):
+                if category and meta.get("category") != category:
+                    continue
+                facts.append(r)
+                if len(facts) >= limit:
+                    break
+        # 按时间倒序
+        facts.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return facts
+
+    # ── 清理 ────────────────────────────────────────────────────
 
     async def forget(self, threshold_days: int = 90, min_access_count: int = 2) -> int:
         """基于遗忘曲线自动清理低价值记忆。

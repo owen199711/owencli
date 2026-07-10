@@ -9,7 +9,8 @@ class StorageTier(Enum):
     FACT_SEMANTIC = "fact_semantic"
     EPISODE_LTM = "episode_ltm"
     CONV_MED = "conv_med"
-    SHORT_TERM = "short_term"
+    SESSION = "session"
+    SHORT_TERM = "session"  # 别名，向后兼容
     DISCARD = "discard"
 
 

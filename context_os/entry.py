@@ -22,6 +22,7 @@ from context_os.core.models import (
     TaskSpec,
     UnifiedContext,
 )
+from context_os.feedback.concept_worker import BackgroundConceptWorker
 from context_os.feedback.evaluator import QualityEvaluator
 from context_os.feedback.memory_updater import MemoryUpdater
 from context_os.feedback.tracer import Tracer
@@ -30,9 +31,10 @@ from context_os.intent.extractor import EntityExtractor
 from context_os.intent.parser import TaskParser
 from context_os.llm.client import BaseLLMClient
 from context_os.memory.episodic import EpisodicMemory
+from context_os.memory.experience import ExperienceMemory
 from context_os.memory.long_term import LongTermMemory
 from context_os.memory.semantic import SemanticMemory
-from context_os.memory.short_term import ShortTermMemory
+from context_os.memory.session_memory import SessionMemory
 from context_os.memory.store import SQLiteStore
 from context_os.memory.working import WorkingMemory
 from context_os.optimizer.budget import TokenBudgetAllocator
@@ -99,7 +101,7 @@ class ContextOSPipeline:
 
         # ── Memory ──
         self.working_memory = WorkingMemory()
-        self.short_term_memory = ShortTermMemory(
+        self.short_term_memory = SessionMemory(
             session_id=self.session_id,
             store=self.store,
         )
@@ -116,6 +118,10 @@ class ContextOSPipeline:
             store=self.store,
             user_id=user_id,
         )
+        self.experience_memory = ExperienceMemory(
+            store=self.store,
+            user_id=user_id,
+        )
 
         # ── Builder ──
         self.builder = ContextBuilder(
@@ -126,6 +132,10 @@ class ContextOSPipeline:
             environment=environment,
             working_memory=self.working_memory,
             long_term_memory=self.long_term_memory,
+            # Phase 4.4: 多源检索
+            session_memory=self.short_term_memory,
+            experience_memory=self.experience_memory,
+            semantic_memory=self.semantic_memory,
         )
 
         # ── Optimizer ──
@@ -141,6 +151,13 @@ class ContextOSPipeline:
         # ── Packager ──
         self.packager = ContextPackager()
 
+        # ── Background Concept Worker（Phase 3.5b）─
+        self.concept_worker = BackgroundConceptWorker(
+            ltm=self.long_term_memory,
+            knowledge=self.semantic_memory,
+            llm_client=llm_client,
+        )
+
         # ── Feedback ──
         self.evaluator = QualityEvaluator(llm_client=llm_client)
         self.tracer = Tracer()
@@ -150,10 +167,15 @@ class ContextOSPipeline:
             long_term_memory=self.long_term_memory,
             episodic_memory=self.episodic_memory,
             semantic_memory=self.semantic_memory,
+            experience_memory=self.experience_memory,
+            concept_worker=self.concept_worker,
         )
 
         # ── LLM ──
         self.llm_client = llm_client
+
+        # ── Start background worker ──
+        self.concept_worker.start()
 
         logger.info(
             "ContextOSPipeline initialized: session=%s, user=%s, provider=%s",
@@ -339,7 +361,23 @@ class ContextOSPipeline:
             raise ContextOSError(f"Pipeline execution failed: {e}") from e
 
     async def close(self) -> None:
-        """关闭 Pipeline，释放资源。"""
+        """关闭 Pipeline，释放资源。
+
+        执行流程:
+            1. 刷新候选缓冲区中待处理的数据
+            2. 停止后台 ConceptWorker 并强制刷新
+            3. 关闭数据库连接
+        """
+        # 刷新候选缓冲区
+        pending_count = await self.short_term_memory.get_pending_count()
+        if pending_count > 0:
+            logger.info("Flushing %d pending candidates on close", pending_count)
+            await self.memory_updater._flush_candidate_buffer(self.user_id)
+
+        # 停止后台 ConceptWorker
+        await self.concept_worker.stop()
+
+        # 关闭数据库
         await self.store.close()
         logger.info("Pipeline closed")
 

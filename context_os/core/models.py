@@ -33,10 +33,12 @@ class GoalType(str, Enum):
 
 class MemoryType(str, Enum):
     WORKING = "working"
-    SHORT_TERM = "short_term"
+    SESSION = "session"
     LONG_TERM = "long_term"
     EPISODIC = "episodic"
+    EXPERIENCE = "experience"
     SEMANTIC = "semantic"
+    KNOWLEDGE = "knowledge"
 
 
 class PriorityLevel(str, Enum):
@@ -219,3 +221,4 @@ class EvalMetrics(BaseModel):
     cost_usd: float = 0.0
     success: bool = False
     reward_score: float = 0.0
+    task_importance: float = 0.5

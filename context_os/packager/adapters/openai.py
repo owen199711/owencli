@@ -25,9 +25,11 @@ class OpenAIPromptAdapter(BasePromptAdapter):
         # ── System ──
         system = (
             "You are owencli, an intelligent AI assistant with access to "
-            "various tools and contextual information. Follow the user's "
-            "instructions carefully. Use the provided context to inform "
-            "your responses."
+            "contextual information and memory. Follow the user's "
+            "instructions carefully.\n\n"
+            "IMPORTANT: When asked to compute or analyze from provided data:\n"
+            "1. First list ALL relevant facts/transactions from the context\n"
+            "2. Group by entity (person, account, etc.)\n"
         )
         sections["system"] = system
 
@@ -41,9 +43,9 @@ class OpenAIPromptAdapter(BasePromptAdapter):
 
         # ── Memory ──
         if unified.memory:
-            mem_lines = ["[Memory]"]
-            for item in unified.memory[:30]:
-                mem_lines.append(f"  - [{item.type.value}] {item.content[:200]}")
+            mem_lines = ["[Memory / Transaction Records]"]
+            for i, item in enumerate(unified.memory[:30], 1):
+                mem_lines.append(f"  [{i}] {item.content[:200]}")
             sections["memory"] = "\n".join(mem_lines)
 
         # ── Knowledge ──

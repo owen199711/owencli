@@ -8,6 +8,8 @@
     - episodes: 情景记忆专用表
     - concepts: 语义记忆（知识图谱节点）
     - concept_relations: 语义记忆（知识图谱关系）
+    - reflections: Agent 反思记录（仍被 reflect_middleware 使用）
+    - experiences: 统一体验表（episode/reflection/procedure/tool_usage）
 """
 
 from __future__ import annotations
@@ -93,38 +95,7 @@ class SQLiteStore:
     CREATE INDEX IF NOT EXISTS idx_relations_source ON concept_relations(source_id);
     CREATE INDEX IF NOT EXISTS idx_relations_target ON concept_relations(target_id);
 
-    -- FactMemory: 版本化事实 KV 存储
-    CREATE TABLE IF NOT EXISTS facts (
-        id              TEXT PRIMARY KEY,
-        content         TEXT NOT NULL,
-        category        TEXT NOT NULL,
-        confidence      REAL NOT NULL DEFAULT 1.0,
-        version         INTEGER NOT NULL DEFAULT 1,
-        user_id         TEXT NOT NULL,
-        source          TEXT,
-        metadata        TEXT,
-        current_value   TEXT,
-        history         TEXT,
-        created_at      TEXT NOT NULL,
-        updated_at      TEXT NOT NULL
-    );
-
-    -- ProceduralMemory: 工作流程与步骤模式
-    CREATE TABLE IF NOT EXISTS procedures (
-        id              TEXT PRIMARY KEY,
-        user_id         TEXT NOT NULL,
-        name            TEXT NOT NULL,
-        description     TEXT,
-        steps           TEXT NOT NULL,
-        tags            TEXT,
-        success_count   INTEGER DEFAULT 0,
-        total_count     INTEGER DEFAULT 0,
-        last_used       TEXT,
-        created_at      TEXT NOT NULL,
-        updated_at      TEXT NOT NULL
-    );
-
-    -- ReflectionMemory: Agent 自我反思与经验教训
+    -- ReflectionMemory: Agent 自我反思与经验教训（仍被 reflect_middleware 使用）
     CREATE TABLE IF NOT EXISTS reflections (
         id              TEXT PRIMARY KEY,
         user_id         TEXT NOT NULL,
@@ -137,45 +108,53 @@ class SQLiteStore:
         created_at      TEXT NOT NULL
     );
 
-    -- TaskMemory: 任务执行记录
-    CREATE TABLE IF NOT EXISTS task_records (
-        id              TEXT PRIMARY KEY,
-        user_id         TEXT NOT NULL,
-        task_type       TEXT,
-        intent          TEXT,
-        status          TEXT NOT NULL DEFAULT 'pending',
-        input           TEXT,
-        output          TEXT,
-        error           TEXT,
-        token_used      INTEGER DEFAULT 0,
-        duration_ms     INTEGER DEFAULT 0,
-        metadata        TEXT,
-        created_at      TEXT NOT NULL,
-        completed_at    TEXT
-    );
+    -- 统一 Experience 表（合并 episodes / reflections / procedures / tool_experience）
+    CREATE TABLE IF NOT EXISTS experiences (
+        id               TEXT PRIMARY KEY,
+        user_id          TEXT DEFAULT 'anonymous',
+        experience_type  TEXT NOT NULL,       -- 'episode' | 'reflection' | 'procedure' | 'tool_usage'
 
-    -- ToolExperienceMemory: 工具调用经验与成功率追踪
-    CREATE TABLE IF NOT EXISTS tool_experience (
-        id              TEXT PRIMARY KEY,
-        user_id         TEXT NOT NULL,
-        tool_name       TEXT NOT NULL,
-        success         INTEGER NOT NULL,
-        error_type      TEXT,
-        duration_ms     INTEGER DEFAULT 0,
-        scenario        TEXT,
-        input_preview   TEXT,
-        output_preview  TEXT,
-        created_at      TEXT NOT NULL
-    );
+        -- 通用
+        tags             TEXT DEFAULT '[]',   -- JSON
+        metadata         TEXT DEFAULT '{}',    -- JSON
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
 
-    CREATE TABLE IF NOT EXISTS tool_stats (
-        tool_name       TEXT,
-        user_id         TEXT,
-        total_calls     INTEGER DEFAULT 0,
-        success_calls   INTEGER DEFAULT 0,
-        avg_duration_ms REAL DEFAULT 0,
-        PRIMARY KEY (tool_name, user_id)
+        -- episode 专有
+        scene            TEXT,
+        action           TEXT,
+        result           TEXT,
+        feedback         TEXT,
+
+        -- reflection 专有
+        task_type        TEXT,                -- 反思所属任务类型
+        root_cause       TEXT,                -- 根因分析
+        lesson           TEXT,                -- 经验教训
+        preventive_action TEXT,               -- 预防措施
+
+        -- procedure 专有
+        proc_name        TEXT,                -- 流程名称（别名为 name）
+        steps            TEXT,                -- 步骤 JSON
+        total_count      INTEGER DEFAULT 0,   -- 总执行次数
+        proc_success_count INTEGER DEFAULT 0, -- 成功次数（别名为 success_count）
+        last_used        TEXT,                -- 最后使用时间
+
+        -- tool_usage 专有
+        tool_name        TEXT,
+        tool_success     INTEGER,             -- 0 或 1（别名为 success）
+        error_type       TEXT,
+        duration_ms      INTEGER DEFAULT 0,
+        scenario         TEXT,
+
+        -- 输入/输出预览（tool_usage 和 episode 通用）
+        input_preview    TEXT,
+        output_preview   TEXT
     );
+    CREATE INDEX IF NOT EXISTS idx_exp_type ON experiences(experience_type);
+    CREATE INDEX IF NOT EXISTS idx_exp_user ON experiences(user_id);
+    CREATE INDEX IF NOT EXISTS idx_exp_tags ON experiences(tags);
+    CREATE INDEX IF NOT EXISTS idx_exp_tool ON experiences(user_id, tool_name);
+    CREATE INDEX IF NOT EXISTS idx_exp_created ON experiences(created_at DESC);
     """
 
     def __init__(self, db_path: Optional[str] = None):
@@ -617,6 +596,223 @@ class SQLiteStore:
 
         return {"nodes": list(nodes.values()), "edges": edges}
 
+    # ── Experience 统一记忆 ──────────────────────────────────
+
+    async def save_experience(
+        self,
+        experience_type: str,
+        user_id: str = "anonymous",
+        tags: Optional[list[str]] = None,
+        metadata: Optional[dict] = None,
+        # episode
+        scene: Optional[str] = None,
+        action: Optional[str] = None,
+        result: Optional[str] = None,
+        feedback: Optional[str] = None,
+        # reflection
+        task_type: Optional[str] = None,
+        root_cause: Optional[str] = None,
+        lesson: Optional[str] = None,
+        preventive_action: Optional[str] = None,
+        # procedure
+        proc_name: Optional[str] = None,
+        steps_json: Optional[str] = None,
+        total_count: int = 0,
+        proc_success_count: int = 0,
+        last_used: Optional[str] = None,
+        # tool_usage
+        tool_name: Optional[str] = None,
+        tool_success: Optional[int] = None,
+        error_type: Optional[str] = None,
+        duration_ms: int = 0,
+        scenario: Optional[str] = None,
+        input_preview: Optional[str] = None,
+        output_preview: Optional[str] = None,
+        exp_id: Optional[str] = None,
+    ) -> str:
+        """保存一条统一体验记录。
+
+        Args:
+            experience_type: 类型: 'episode' | 'reflection' | 'procedure' | 'tool_usage'.
+            user_id: 用户 ID。
+            tags: 标签列表。
+            metadata: 附加元数据。
+            （以下为各子类型特有字段，按需传入）
+            exp_id: 可选，指定 ID（更新时使用）。
+
+        Returns:
+            记录 ID。
+        """
+        eid = exp_id or uuid.uuid4().hex
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        if not self._conn:
+            await self._fallback_save(
+                eid, f"exp:{experience_type}",
+                f"experience({experience_type})", None, user_id,
+                {"tags": tags, "metadata": metadata},
+            )
+            return eid
+
+        await self._conn.execute(
+            """INSERT INTO experiences (
+                id, user_id, experience_type,
+                tags, metadata, created_at, updated_at,
+                scene, action, result, feedback,
+                task_type, root_cause, lesson, preventive_action,
+                proc_name, steps, total_count, proc_success_count, last_used,
+                tool_name, tool_success, error_type, duration_ms, scenario,
+                input_preview, output_preview
+            ) VALUES (
+                ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, ?
+            )""",
+            (
+                eid, user_id, experience_type,
+                json.dumps(tags or []), json.dumps(metadata or {}),
+                timestamp, timestamp,
+                scene, action, result, feedback,
+                task_type, root_cause, lesson, preventive_action,
+                proc_name, steps_json, total_count, proc_success_count, last_used,
+                tool_name, tool_success, error_type, duration_ms, scenario,
+                input_preview, output_preview,
+            ),
+        )
+        await self._conn.commit()
+        logger.debug("Experience saved: id=%s, type=%s", eid, experience_type)
+        return eid
+
+    async def query_experiences(
+        self,
+        experience_type: Optional[str] = None,
+        user_id: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+        tool_name: Optional[str] = None,
+        scenario_query: Optional[str] = None,
+        scene_query: Optional[str] = None,
+        top_k: int = 20,
+        offset: int = 0,
+        created_after: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """查询体验记录。
+
+        Args:
+            experience_type: 按类型筛选。
+            user_id: 按用户筛选。
+            tags: 按标签筛选（OR 匹配）。
+            tool_name: 按工具名筛选（仅 tool_usage）。
+            scenario_query: 按场景关键词 LIKE 匹配（tool_usage）。
+            scene_query: 按 scene 关键词 LIKE 匹配（episode）。
+            top_k: 返回上限。
+            offset: 偏移量。
+            created_after: 只返回此时间之后的记录（ISO 8601）。
+
+        Returns:
+            体验记录字典列表。
+        """
+        if not self._conn:
+            return self._fallback_query(f"exp:{experience_type}" if experience_type else None, top_k)
+
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if experience_type:
+            conditions.append("experience_type = ?")
+            params.append(experience_type)
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if tags:
+            tag_conditions = " OR ".join("tags LIKE ?" for _ in tags)
+            conditions.append(f"({tag_conditions})")
+            params.extend([f"%{t}%" for t in tags])
+        if tool_name:
+            conditions.append("tool_name = ?")
+            params.append(tool_name)
+        if scenario_query:
+            conditions.append("scenario LIKE ?")
+            params.append(f"%{scenario_query}%")
+        if scene_query:
+            conditions.append("scene LIKE ?")
+            params.append(f"%{scene_query}%")
+        if created_after:
+            conditions.append("created_at > ?")
+            params.append(created_after)
+
+        where = " AND ".join(conditions) if conditions else "1=1"
+
+        cursor = await self._conn.execute(
+            f"SELECT * FROM experiences WHERE {where} "
+            f"ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            [*params, top_k, offset],
+        )
+        rows = await cursor.fetchall()
+        results = [self._row_to_dict(r) for r in rows]
+        logger.debug("Experience query: type=%s, results=%d", experience_type, len(results))
+        return results
+
+    async def get_tool_stats(
+        self,
+        user_id: Optional[str] = None,
+        tool_name: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """实时聚合工具使用统计。
+
+        从 experiences 表中 GROUP BY tool_name 计算：
+        total_calls, success_calls, avg_duration_ms, last_used。
+
+        Args:
+            user_id: 按用户筛选。
+            tool_name: 按工具名筛选。
+
+        Returns:
+            [{tool_name, user_id, total_calls, success_calls, avg_duration_ms, last_used}, ...]。
+        """
+        if not self._conn:
+            return []
+
+        conditions: list[str] = ["experience_type = 'tool_usage'"]
+        params: list[Any] = []
+
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if tool_name:
+            conditions.append("tool_name = ?")
+            params.append(tool_name)
+
+        where = " AND ".join(conditions)
+
+        cursor = await self._conn.execute(
+            f"""SELECT
+                    tool_name AS tool_name,
+                    user_id,
+                    COUNT(*) AS total_calls,
+                    SUM(CASE WHEN tool_success = 1 THEN 1 ELSE 0 END) AS success_calls,
+                    AVG(duration_ms) AS avg_duration_ms,
+                    MAX(created_at) AS last_used
+                FROM experiences
+                WHERE {where}
+                GROUP BY tool_name, user_id
+                ORDER BY total_calls DESC""",
+            params,
+        )
+        rows = await cursor.fetchall()
+        results = [dict(r) for r in rows]
+
+        # 格式化 avg_duration_ms
+        for r in results:
+            if r.get("avg_duration_ms") is not None:
+                r["avg_duration_ms"] = round(r["avg_duration_ms"], 1)
+
+        logger.debug("Tool stats: %d tools aggregated", len(results))
+        return results
+
     # ── 辅助 ────────────────────────────────────────────────────
 
     @staticmethod
@@ -624,7 +820,7 @@ class SQLiteStore:
         """将 aiosqlite.Row 转为普通 dict。"""
         result = dict(row)
         # 反序列化 JSON 字段
-        for key in ("metadata", "attributes", "embedding", "history", "related_files", "tags", "steps"):
+        for key in ("metadata", "attributes", "embedding", "related_files", "tags", "steps"):
             if key in result and isinstance(result[key], str):
                 try:
                     result[key] = json.loads(result[key])
