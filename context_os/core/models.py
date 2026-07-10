@@ -35,7 +35,6 @@ class MemoryType(str, Enum):
     WORKING = "working"
     SESSION = "session"
     LONG_TERM = "long_term"
-    EPISODIC = "episodic"
     EXPERIENCE = "experience"
     SEMANTIC = "semantic"
     KNOWLEDGE = "knowledge"

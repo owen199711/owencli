@@ -5,10 +5,8 @@
 
 表结构:
     - memories: 统一的记忆存储表
-    - episodes: 情景记忆专用表
     - concepts: 语义记忆（知识图谱节点）
     - concept_relations: 语义记忆（知识图谱关系）
-    - reflections: Agent 反思记录（仍被 reflect_middleware 使用）
     - experiences: 统一体验表（episode/reflection/procedure/tool_usage）
 """
 
@@ -59,19 +57,6 @@ class SQLiteStore:
     CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id);
     CREATE INDEX IF NOT EXISTS idx_memories_timestamp ON memories(timestamp DESC);
 
-    CREATE TABLE IF NOT EXISTS episodes (
-        id              TEXT PRIMARY KEY,
-        scene           TEXT NOT NULL,
-        action          TEXT NOT NULL,
-        result          TEXT NOT NULL,
-        feedback        TEXT DEFAULT '',
-        related_files   TEXT DEFAULT '[]',
-        tags            TEXT DEFAULT '[]',
-        user_id         TEXT DEFAULT 'anonymous',
-        timestamp       TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_episodes_timestamp ON episodes(timestamp DESC);
-
     CREATE TABLE IF NOT EXISTS concepts (
         id              TEXT PRIMARY KEY,
         name            TEXT UNIQUE NOT NULL,
@@ -94,19 +79,6 @@ class SQLiteStore:
     );
     CREATE INDEX IF NOT EXISTS idx_relations_source ON concept_relations(source_id);
     CREATE INDEX IF NOT EXISTS idx_relations_target ON concept_relations(target_id);
-
-    -- ReflectionMemory: Agent 自我反思与经验教训（仍被 reflect_middleware 使用）
-    CREATE TABLE IF NOT EXISTS reflections (
-        id              TEXT PRIMARY KEY,
-        user_id         TEXT NOT NULL,
-        task_type       TEXT,
-        success         INTEGER NOT NULL DEFAULT 1,
-        root_cause      TEXT,
-        lesson_learned  TEXT,
-        preventive_action TEXT,
-        metadata        TEXT,
-        created_at      TEXT NOT NULL
-    );
 
     -- 统一 Experience 表（合并 episodes / reflections / procedures / tool_experience）
     CREATE TABLE IF NOT EXISTS experiences (
