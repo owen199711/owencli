@@ -4,6 +4,88 @@
 
 ---
 
+## Benchmark 结果
+
+![Benchmark Dashboard](docs/img.png)
+
+> 最新测试时间：2026-07-10，模型：DeepSeek，整体评分 **88.5% (B+)**。
+
+### 测试场景
+
+| ID | 场景 | 核心挑战 |
+|----|------|---------|
+| T1 | 多用户金融管理 | 跨用户追踪收入/支出/冲正/利息，多实体推理 |
+| T2 | 多层配置级联 | 全局→项目→用户三级配置继承与覆盖关系 |
+| T3 | 社交关系网络 | 多角色关系链（认识/合作/怀疑/和解等）动态演变 |
+| T4 | 系统监控时序 | CPU/内存/磁盘/TPS 多指标持续变化趋势分析 |
+| T5 | 钱包余额推理 | 长链数值累积，需从反向问题追溯初始余额 |
+| T6 | 跨会话记忆干扰 | Session B 需正确引用 Session A 的完整配置链 |
+
+### 评估方式
+
+三层加权评估：
+
+```
+final_score = 0.30 × keyword_recall + 0.40 × llm_judge + 0.30 × structured_compare
+```
+
+- **Keyword Recall（30%）**：预期关键词是否出现在回复中
+- **LLM Judge（40%）**：LLM 根据 ground truth 评分（0-10）
+- **Structured Compare（30%）**：JSON 字段级精确匹配
+
+### 记忆 Benchmark（6 用例）
+
+| Case | SimpleAgent | MemoryAgent | Δ 提升 | Pass |
+|------|:-----------:|:-----------:|:------:|:----:|
+| T1 金融多用户 | 0% | **68%** | +68% | ✅ |
+| T2 配置级联 | 36% | **100%** | +64% | ✅ |
+| T3 社交网络 | 4% | **60%** | +56% | ✅ |
+| T4 系统监控 | 24% | **73%** | +49% | ✅ |
+| T5 钱包推理 | 8% | **70%** | +62% | ✅ |
+| T6 跨会话 | 56% | **100%** | +44% | ✅ |
+
+**汇总：**
+
+| 指标 | 数值 |
+|------|:----:|
+| MemoryAgent 平均准确率 | **78.6%** |
+| SimpleAgent 平均准确率 | 21.3% |
+| 记忆系统提升幅度 | **+57.3%** |
+| 用例通过率 | **6/6 (100%)** |
+
+### Scoring Dashboard
+
+| 维度 | 得分 | 说明 |
+|------|:---:|------|
+| intent | 100.0% | 意图识别准确率 |
+| collection | 100.0% | 上下文数据收集 |
+| builder | 100.0% | 上下文构建 |
+| **memory** | **78.6%** | 记忆系统准确率 |
+| recall | 100.0% | 记忆检索召回率 |
+| compression | 76.0% | 上下文压缩效率 |
+| feedback | 100.0% | 反馈闭环 |
+| reflection | 100.0% | 自我反思 |
+| pipeline | 52.7% | 全链路延迟评分 |
+| **Overall** | **88.5% (B+)** | |
+
+### 关键结论
+
+- 记忆系统在所有 6 个测试用例上显著优于无记忆基线，平均提升 **+57.3%**
+- 所有模块测试通过率 **100%**
+- pipeline 延迟评分 52.7%，仍有优化空间
+- 详细架构说明见 [docs/MEMORY_ARCHITECTURE.md](docs/MEMORY_ARCHITECTURE.md)
+
+### 运行评测
+
+```powershell
+# 完整 Benchmark（所有测试）
+cd d:\study\owencli
+$env:DEEPSEEK_API_KEY = ""
+python -m benchmark.run --mode all
+```
+
+---
+
 ## 快速开始
 
 ```bash
@@ -232,86 +314,6 @@ context-os:
 
 ---
 
-## Benchmark 结果
-
-最新测试时间：2026-07-10，模型：DeepSeek，整体评分 **88.5% (B+)**。
-
-### 测试场景
-
-| ID | 场景 | 核心挑战 |
-|----|------|---------|
-| T1 | 多用户金融管理 | 跨用户追踪收入/支出/冲正/利息，多实体推理 |
-| T2 | 多层配置级联 | 全局→项目→用户三级配置继承与覆盖关系 |
-| T3 | 社交关系网络 | 多角色关系链（认识/合作/怀疑/和解等）动态演变 |
-| T4 | 系统监控时序 | CPU/内存/磁盘/TPS 多指标持续变化趋势分析 |
-| T5 | 钱包余额推理 | 长链数值累积，需从反向问题追溯初始余额 |
-| T6 | 跨会话记忆干扰 | Session B 需正确引用 Session A 的完整配置链 |
-
-### 评估方式
-
-三层加权评估：
-
-```
-final_score = 0.30 × keyword_recall + 0.40 × llm_judge + 0.30 × structured_compare
-```
-
-- **Keyword Recall（30%）**：预期关键词是否出现在回复中
-- **LLM Judge（40%）**：LLM 根据 ground truth 评分（0-10）
-- **Structured Compare（30%）**：JSON 字段级精确匹配
-
-### 记忆 Benchmark（6 用例）
-
-| Case | SimpleAgent | MemoryAgent | Δ 提升 | Pass |
-|------|:-----------:|:-----------:|:------:|:----:|
-| T1 金融多用户 | 0% | **68%** | +68% | ✅ |
-| T2 配置级联 | 36% | **100%** | +64% | ✅ |
-| T3 社交网络 | 4% | **60%** | +56% | ✅ |
-| T4 系统监控 | 24% | **73%** | +49% | ✅ |
-| T5 钱包推理 | 8% | **70%** | +62% | ✅ |
-| T6 跨会话 | 56% | **100%** | +44% | ✅ |
-
-**汇总：**
-
-| 指标 | 数值 |
-|------|:----:|
-| MemoryAgent 平均准确率 | **78.6%** |
-| SimpleAgent 平均准确率 | 21.3% |
-| 记忆系统提升幅度 | **+57.3%** |
-| 用例通过率 | **6/6 (100%)** |
-
-### Scoring Dashboard
-
-| 维度 | 得分 | 说明 |
-|------|:---:|------|
-| intent | 100.0% | 意图识别准确率 |
-| collection | 100.0% | 上下文数据收集 |
-| builder | 100.0% | 上下文构建 |
-| **memory** | **78.6%** | 记忆系统准确率 |
-| recall | 100.0% | 记忆检索召回率 |
-| compression | 76.0% | 上下文压缩效率 |
-| feedback | 100.0% | 反馈闭环 |
-| reflection | 100.0% | 自我反思 |
-| pipeline | 52.7% | 全链路延迟评分 |
-| **Overall** | **88.5% (B+)** | |
-
-### 关键结论
-
-- 记忆系统在所有 6 个测试用例上显著优于无记忆基线，平均提升 **+57.3%**
-- 所有模块测试通过率 **100%**
-- pipeline 延迟评分 52.7%，仍有优化空间
-- 详细架构说明见 [docs/MEMORY_ARCHITECTURE.md](docs/MEMORY_ARCHITECTURE.md)
-
-### 运行评测
-
-```powershell
-# 完整 Benchmark（所有测试）
-cd d:\study\owencli
-$env:DEEPSEEK_API_KEY = ""
-python -m benchmark.run --mode all
-```
-
----
-
 ## 项目结构
 
 ```
@@ -384,7 +386,7 @@ tests/                       # 单元测试（294 个）
 - [x] Intent Understanding 引擎（LLM + Regex 双模式）
 - [x] Context Orchestrator 动态选择
 - [x] 数据收集层（Identity + Conversation + Environment）
-- [x] 10 种记忆子系统完整实现
+- [x] 记忆子系统完整实现
 - [x] Context Builder + Merger
 - [x] Context Optimizer（排序+压缩+Token Budget）
 - [x] Context Packager + 多模型适配（Claude/OpenAI/DeepSeek）
