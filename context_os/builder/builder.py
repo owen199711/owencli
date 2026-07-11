@@ -130,7 +130,11 @@ class ContextBuilder:
             collect_tasks = [collector_map[r.flag].collect() for r in active_routes]
 
             # ── 4 源并行检索 ──
-            if ContextFlag.MEMORY in flags:
+            ltm_task = None
+            session_task = None
+            exp_task = None
+            kw_task = None
+            if ContextFlag.MEMORY in flags and self.long_term_memory is not None:
                 # LTM
                 # Phase 4.5: 自动检测时间回溯查询
                 expand = self.long_term_memory.detect_temporal_query(task.raw_input)
@@ -316,7 +320,7 @@ class ContextBuilder:
             collect_tasks = [collector_map[r.flag].collect() for r in active_routes]
 
             memory_task = None
-            if ContextFlag.MEMORY in flags:
+            if ContextFlag.MEMORY in flags and self.long_term_memory is not None:
                 memory_task = asyncio.create_task(
                     self.long_term_memory.retrieve(
                         task.raw_input, top_k=25, intent=task.intent.value,

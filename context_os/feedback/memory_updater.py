@@ -21,7 +21,7 @@ from context_os.memory.semantic import SemanticMemory
 from context_os.memory.session_memory import SessionMemory
 from context_os.memory.working import WorkingMemory
 from context_os.feedback.memory_importance import ImportanceScorer, ImportanceScore
-from context_os.feedback.triple_extractor import TripleExtractor, TripleExtractResult
+from context_os.feedback.triple_extractor import TripleExtractor, TripleExtractResult, _is_valid_concept
 
 if TYPE_CHECKING:
     from context_os.feedback.concept_worker import BackgroundConceptWorker
@@ -624,6 +624,11 @@ class MemoryUpdater:
         # Knowledge
         if route.get("knowledge") and result.triple_result:
             for triple in result.triple_result.triples:
+                # 质量过滤：跳过无效概念
+                if not _is_valid_concept(triple.subject) or not _is_valid_concept(triple.obj):
+                    continue
+                if triple.subject == triple.obj:
+                    continue
                 try:
                     await self.sem.add_concept(
                         name=triple.subject,

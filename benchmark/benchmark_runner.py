@@ -77,6 +77,9 @@ class CaseResult:
     avg_judge_score: float = 0.0
     avg_final_score: float = 0.0
     simple_avg_score: float = 0.0
+    # ── 回顾轮（最后一轮）专用分 — 唯一真正测试记忆召回的轮次 ──
+    review_final_score: float = 0.0
+    review_simple_score: float = 0.0
     passed: bool = False
 
 
@@ -371,13 +374,18 @@ class BenchmarkRunner:
                 # MemoryAgent with diagnostics
                 resp_memory, diag = await observer.observe_run(question)
 
+                # 仅在最终回顾轮启用 LLM Judge（避免对数据录入轮误判）
+                is_review_q = (q_idx == len(test_case.questions) - 1)
+                eval_ground_truth = test_case.ground_truth if is_review_q else ""
+                eval_expected_json = test_case.expected_json if is_review_q else None
+
                 # 多层评测（有记忆）
                 eval_result = await self.eval_engine.evaluate(
                     response=resp_memory,
                     question=question,
                     expected_keywords=test_case.expected_keywords_per_q[q_idx],
-                    ground_truth=test_case.ground_truth,
-                    expected_json=test_case.expected_json,
+                    ground_truth=eval_ground_truth,
+                    expected_json=eval_expected_json,
                 )
 
                 # 多层评测（无记忆）
@@ -385,8 +393,8 @@ class BenchmarkRunner:
                     response=resp_simple,
                     question=question,
                     expected_keywords=test_case.expected_keywords_per_q[q_idx],
-                    ground_truth=test_case.ground_truth,
-                    expected_json=test_case.expected_json,
+                    ground_truth=eval_ground_truth,
+                    expected_json=eval_expected_json,
                 )
 
                 round_diag = RoundDiagnostics(
@@ -413,7 +421,7 @@ class BenchmarkRunner:
                 elif final_s < simple_final:
                     print(f"      ⚠️ 无记忆反而更好: Δ={simple_final - final_s:.1%}")
 
-            # 计算平均分
+            # 计算平均分（所有轮次）
             eval_rounds = [r for r in case_result.rounds if r.eval_result]
             if eval_rounds:
                 case_result.avg_keyword_score = sum(
@@ -429,12 +437,28 @@ class BenchmarkRunner:
                     r.simple_eval.final_score for r in eval_rounds if r.simple_eval
                 ) / len(eval_rounds)
 
+            # 计算回顾轮专分（最后一轮 — 唯一真正测试记忆召回的轮次）
+            if case_result.rounds:
+                review = case_result.rounds[-1]
+                if review.eval_result:
+                    case_result.review_final_score = review.eval_result.final_score
+                if review.simple_eval:
+                    case_result.review_simple_score = review.simple_eval.final_score
+
+                # 回顾轮对比摘要
+                if review.eval_result and review.simple_eval:
+                    r_final = case_result.review_final_score
+                    r_simple = case_result.review_simple_score
+                    delta = r_final - r_simple
+                    direction = "✅ +" if delta > 0 else ("⚠️ " if delta < 0 else "= ")
+                    print(f"\n  📊 Review Round: Memory={r_final:.0%}  Simple={r_simple:.0%}  Δ={direction}{delta:+.0%}")
+
             # 模块测试（用第一轮的诊断）
             if case_result.rounds:
                 first_diag = case_result.rounds[0].diagnostics
                 case_result.module_results = self._diagnostics_to_module_results(first_diag)
 
-            case_result.passed = case_result.avg_final_score >= 0.6
+            case_result.passed = case_result.review_final_score >= 0.6
 
         finally:
             await memory.close()
@@ -678,10 +702,10 @@ class BenchmarkRunner:
         else:
             dashboard["intent"] = 0.0
 
-        # Memory Score
+        # Memory Score（使用回顾轮专分 — 唯一真正测试记忆召回的轮次）
         mem_benchmarks = results.get("memory_benchmarks", [])
         if mem_benchmarks:
-            dashboard["memory"] = sum(m["avg_final_score"] for m in mem_benchmarks) / len(mem_benchmarks)
+            dashboard["memory"] = sum(m["review_final_score"] for m in mem_benchmarks) / len(mem_benchmarks)
         else:
             dashboard["memory"] = 0.0
 
@@ -874,6 +898,9 @@ class BenchmarkRunner:
                     "avg_judge_score": case_result.avg_judge_score,
                     "avg_final_score": case_result.avg_final_score,
                     "simple_avg_score": case_result.simple_avg_score,
+                    # 回顾轮专分（唯一真正测试记忆召回的轮次）
+                    "review_final_score": case_result.review_final_score,
+                    "review_simple_score": case_result.review_simple_score,
                     "passed": case_result.passed,
                     "round_count": len(case_result.rounds),
                 })
@@ -919,9 +946,9 @@ class BenchmarkRunner:
         dashboard = self._compute_scoring_dashboard(results)
         results["dashboard"] = dashboard
 
-        # 汇总
-        mem_scores = [m["avg_final_score"] for m in results["memory_benchmarks"]]
-        simple_scores = [m["simple_avg_score"] for m in results["memory_benchmarks"]]
+        # 汇总（使用回顾轮专分计算记忆改善）
+        mem_scores = [m["review_final_score"] for m in results["memory_benchmarks"]]
+        simple_scores = [m["review_simple_score"] for m in results["memory_benchmarks"]]
         modules_passed = sum(
             1 for mt in results["module_tests"] for m in mt["modules"] if m["passed"]
         )

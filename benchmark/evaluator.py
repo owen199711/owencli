@@ -101,15 +101,20 @@ class EvaluationEngine:
     async def llm_judge(
         self,
         question: str,
-        expected: str,
-        response: str,
+        expected: str = "",
+        response: str = "",
+        expected_json: Optional[dict[str, Any]] = None,
     ) -> EvalScore:
         """LLM Judge — 调用 LLM 对回答质量进行评分。
 
+        优先使用 expected_json 构造可读的期望答案；
+        如果 expected_json 为空才使用 expected（自然语言 ground_truth）。
+
         Args:
             question: 问题。
-            expected: 期望答案。
+            expected: 自然语言期望答案（备用，将被 expected_json 优先覆盖）。
             response: 实际回答。
+            expected_json: 结构化期望数据（优先使用，自动构造可读评分标准）。
 
         Returns:
             EvalScore(score=0.0~1.0, details={"reason": ..., "raw_score": 0-10})
@@ -117,10 +122,12 @@ class EvaluationEngine:
         if not self.llm_client:
             return EvalScore(0.5, {"note": "无 LLM Judge 客户端"})
 
+        expected_block = self._build_expected_answer(expected, expected_json)
+
         prompt = (
-            "你是一位严谨的评测员。请根据期望答案，对 AI 的回答进行评分（0-10 分）。\n\n"
+            "你是一位严谨的评测员。请根据期望答案标准，对 AI 的回答进行评分（0-10 分）。\n\n"
             f"【问题】\n{question}\n\n"
-            f"【期望答案】\n{expected}\n\n"
+            f"{expected_block}\n\n"
             f"【AI 回答】\n{response[:2000]}\n\n"
             "评分标准：\n"
             "- 10: 完全正确，信息完整，逻辑清晰\n"
@@ -154,6 +161,35 @@ class EvaluationEngine:
             })
         except Exception as e:
             return EvalScore(0.5, {"error": str(e), "note": "LLM Judge 调用失败"})
+
+    @staticmethod
+    def _build_expected_answer(
+        ground_truth: str = "",
+        expected_json: Optional[dict[str, Any]] = None,
+    ) -> str:
+        """从 expected_json 或 ground_truth 构建可读的期望答案标准。
+
+        优先使用 expected_json 构造结构化期望标准；
+        其次使用 ground_truth 作为自然语言期望答案。
+
+        Args:
+            ground_truth: 自然语言期望答案（备用）。
+            expected_json: 结构化期望数据（优先）。
+
+        Returns:
+            格式化的期望答案文本块。
+        """
+        if expected_json:
+            items = "\n".join(
+                f"  - {k}: {v}"
+                for k, v in expected_json.items()
+            )
+            return f"【期望答案标准】（请逐项检查 AI 回答是否包含以下关键信息）\n{items}"
+
+        if ground_truth:
+            return f"【期望答案】\n{ground_truth}"
+
+        return "【期望答案】（未提供期望答案，请根据问题语义自行判断回答质量）"
 
     # ═══════════════════════════════════════════════════════════════
     # Layer 3: 结构化比对
@@ -225,8 +261,14 @@ class EvaluationEngine:
         result.keyword_detail = kw.details
 
         # Layer 2: LLM Judge
-        if self.llm_client and ground_truth:
-            judge = await self.llm_judge(question, ground_truth, response)
+        # 只要有 expected_json 或 ground_truth 即可启用 Judge
+        if self.llm_client and (ground_truth or expected_json):
+            judge = await self.llm_judge(
+                question=question,
+                expected=ground_truth,
+                response=response,
+                expected_json=expected_json,
+            )
             result.judge_score = judge.score
             result.judge_reason = judge.details.get("reason", judge.details.get("error", ""))
         else:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Optional
 
 from openai import AsyncOpenAI
@@ -90,9 +91,49 @@ class DeepSeekClient(BaseLLMClient):
             )
 
             if response_format == "json":
-                return json.loads(text)
+                return self._extract_json(text)
             return text
 
         except Exception as e:
             logger.error("DeepSeek API error: %s", e, exc_info=True)
             raise
+
+    @staticmethod
+    def _extract_json(text: str) -> dict[str, Any]:
+        """从 LLM 响应中安全提取 JSON，处理各种格式问题。
+
+        尝试顺序：
+        1. 直接解析整个文本
+        2. 提取 ```json ... ``` 代码块
+        3. 用正则提取最外层的 {...} 对象
+        """
+        # 尝试 1: 直接解析
+        try:
+            return json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # 尝试 2: 提取 markdown 代码块
+        code_block_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
+        matches = re.findall(code_block_pattern, text)
+        for match in matches:
+            try:
+                return json.loads(match)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        # 尝试 3: 正则提取最外层 {...} 或 [{...}]
+        brace_pattern = r"(\{(?:[^{}]|(?:\{[^{}]*\}))*\})"
+        matches = re.findall(brace_pattern, text)
+        for match in matches:
+            try:
+                return json.loads(match)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        # 所有尝试失败，记录原始文本并抛出
+        logger.error(
+            "Failed to extract JSON from response (len=%d): %s",
+            len(text), text[:500],
+        )
+        raise ValueError(f"Cannot parse JSON from DeepSeek response: {text[:500]}")

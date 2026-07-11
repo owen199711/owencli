@@ -94,7 +94,8 @@ class TestTripleExtractor:
         assert result.channel_a_hit
 
     def test_x_yong_y_v3(self, ex):
-        result = ex.extract("我用 Python 写脚本")
+        """'X 利用 Y' 变体 — subject 需要 ≥2 字（质量过滤）。"""
+        result = ex.extract("这个系统利用 Redis 做缓存")
         assert result.channel_a_hit
 
     # ── Channel B 信号检测 ──

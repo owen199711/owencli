@@ -67,63 +67,63 @@ class TripleExtractResult:
 _RULE_PATTERNS: list[tuple[re.Pattern, str, list[tuple[str, str]]]] = [
     # "X 属于 Y" — X belongs to Y
     (
-        re.compile(r"(?P<s>.{1,30}?)\s*(属于|属于|belongs?\s+to)\s*(?P<o>.{1,30}?)(?:[，。,.]|$)"),
+        re.compile(r"(?P<s>.{2,40}?)\s*(属于|属于|belongs?\s+to)\s*(?P<o>.{2,40}?)(?:[，。,.]|$)"),
         "属于",
         [("s", "subject"), ("o", "obj")],
     ),
     # "X 基于 Y" — X is based on Y
     (
-        re.compile(r"(?P<s>.{1,30}?)\s*(基于|based\s+on)\s*(?P<o>.{1,30}?)(?:[，。,.]|$)"),
+        re.compile(r"(?P<s>.{2,40}?)\s*(基于|based\s+on)\s*(?P<o>.{2,40}?)(?:[，。,.]|$)"),
         "基于",
         [("s", "subject"), ("o", "obj")],
     ),
     # "X 包含 Y" — X contains Y
     (
-        re.compile(r"(?P<s>.{1,30}?)\s*(包含|包括|contains?|includes?)\s*(?P<o>.{1,30}?)(?:[，。,.]|$)"),
+        re.compile(r"(?P<s>.{2,40}?)\s*(包含|包括|contains?|includes?)\s*(?P<o>.{2,40}?)(?:[，。,.]|$)"),
         "包含",
         [("s", "subject"), ("o", "obj")],
     ),
     # "X 是 Y" — X is Y (most generic)
     (
-        re.compile(r"(?P<s>.{1,30}?)\s*(是|is\s+a\s+|is\s+an\s+|is\s+)\s*(?P<o>.{1,30}?)(?:[，。,.]|$)"),
+        re.compile(r"(?P<s>.{2,40}?)\s*(是|is\s+a\s+|is\s+an\s+|is\s+)\s*(?P<o>.{2,40}?)(?:[，。,.]|$)"),
         "是",
         [("s", "subject"), ("o", "obj")],
     ),
     # "X 的 Y 是 Z" — X's Y is Z
     (
         re.compile(
-            r"(?P<owner>.{1,20}?)的(?P<attr>.{1,15}?)\s*(是|is)\s*(?P<val>.{1,30}?)(?:[，。,.]|$)"
+            r"(?P<owner>.{2,20}?)的(?P<attr>.{2,15}?)\s*(是|is)\s*(?P<val>.{2,30}?)(?:[，。,.]|$)"
         ),
         "是",
         [("o_a", "subject"), ("val", "obj")],
     ),
-    # "X 用 Y" 模式（产出关系）
+    # "X 用 Y" 模式（使用关系）— 需要结束锚点防止工具名匹配不完整
     (
-        re.compile(r"(?P<s>.{1,30}?)\s*(用|使用|利用|uses?)\s*(?P<tool>.{1,30}?)"),
+        re.compile(r"(?P<s>.{2,40}?)\s*(用|使用|利用|uses?)\s*(?P<tool>.{2,40}?)(?:[，。,.\s]|$)"),
         "使用",
         [("s", "subject"), ("tool", "obj")],
     ),
     # "X 实现了/产出了 Y" — X implements/produces Y
     (
-        re.compile(r"(?P<s>.{1,30}?)\s*(实现了|产出了|implement|produce[sd]?)\s*(?P<o>.{1,30}?)(?:[，。,.]|$)"),
+        re.compile(r"(?P<s>.{2,40}?)\s*(实现了|产出了|implement|produce[sd]?)\s*(?P<o>.{2,40}?)(?:[，。,.]|$)"),
         "产出",
         [("s", "subject"), ("o", "obj")],
     ),
     # "X 调用 Y" — X calls/invokes Y
     (
-        re.compile(r"(?P<s>.{1,30}?)\s*(调用|calls?|invokes?)\s*(?P<o>.{1,30}?)(?:[，。,.]|$)"),
+        re.compile(r"(?P<s>.{2,40}?)\s*(调用|calls?|invokes?)\s*(?P<o>.{2,40}?)(?:[，。,.]|$)"),
         "调用",
         [("s", "subject"), ("o", "obj")],
     ),
     # "X 依赖 Y" — X depends on Y
     (
-        re.compile(r"(?P<s>.{1,30}?)\s*(依赖|depends?\s+on)\s*(?P<o>.{1,30}?)(?:[，。,.]|$)"),
+        re.compile(r"(?P<s>.{2,40}?)\s*(依赖|depends?\s+on)\s*(?P<o>.{2,40}?)(?:[，。,.]|$)"),
         "依赖",
         [("s", "subject"), ("o", "obj")],
     ),
     # "X 等同于 Y" — X equals Y
     (
-        re.compile(r"(?P<s>.{1,30}?)\s*(等同于|等价于|equals?)\s*(?P<o>.{1,30}?)(?:[，。,.]|$)"),
+        re.compile(r"(?P<s>.{2,40}?)\s*(等同于|等价于|equals?)\s*(?P<o>.{2,40}?)(?:[，。,.]|$)"),
         "等同于",
         [("s", "subject"), ("o", "obj")],
     ),
@@ -140,6 +140,66 @@ _CONCEPT_KEYWORDS = re.compile(
 _TECHNICAL_NOUN_PATTERN = re.compile(
     r"[A-Z][a-z]+|[A-Z]{2,}|\b(?:API|SDK|HTTP|JSON|XML|REST|SQL|ORM)\b",
 )
+
+# ── 概念质量验证 ──────────────────────────────────────────
+
+# 中文停用字：单个字通常不作为有意义的实体概念
+_CONCEPT_STOP_CHARS = {
+    "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一",
+    "他", "这", "中", "大", "上", "个", "们", "来", "到", "说", "时", "要",
+    "下", "出", "会", "可", "也", "你", "对", "生", "能", "而", "那", "于",
+    "为", "过", "去", "后", "与", "之", "被", "把", "但", "从", "想", "以",
+    "只", "还", "小", "让", "给", "很", "将", "给", "它", "者", "其", "所",
+    "又", "如", "能", "或", "年", "月", "好", "用", "看", "做", "她",
+    "更", "做", "很", "前", "高", "道", "使", "再", "着",
+}
+
+def _is_valid_concept(name: str, min_len: int = 2) -> bool:
+    """检查概念名称是否有效。
+
+    过滤条件:
+        1. 长度至少 min_len
+        2. 不能是纯空白
+        3. 不能是单个中文停用字
+        4. 不能是纯数字/标点
+        5. 不能是纯英文字母（无意义缩写）
+        6. 不能是由空格分隔的单字碎片（如 "J a C 的"）
+
+    Args:
+        name: 概念名称。
+        min_len: 最小长度（中文至少 2 字，英文至少 3 字符）。
+
+    Returns:
+        是否通过验证。
+    """
+    stripped = name.strip()
+    if not stripped or len(stripped) < min_len:
+        return False
+
+    # 纯数字/标点（数字值如 "8000", "3000元" 是有意义的概念，不拒绝纯数字）
+    if all(c in '.,;:!?+-*/=()[]{}\\|@#$%^&_\'\"`~' for c in stripped):
+        return False
+
+    # 单字中文停用字
+    if len(stripped) == 1 and stripped in _CONCEPT_STOP_CHARS:
+        return False
+
+    # 纯英文字母且 < 3 个字符（如 "J", "a", "C", "ab"）
+    ascii_alpha = [c for c in stripped if c.isascii() and c.isalpha()]
+    if len(ascii_alpha) == len(stripped) and len(stripped) < 3:
+        return False
+
+    # 空格分隔的单字碎片检测：
+    # 如果大部分 token 是单字符，则视为碎片而非实体概念
+    tokens = stripped.split()
+    if len(tokens) >= 2:
+        single_char_tokens = [t for t in tokens if len(t) == 1]
+        # 超过一半的 token 是单字符 → 碎片
+        if len(single_char_tokens) > len(tokens) / 2:
+            return False
+
+    return True
+
 
 # ── 清理函数 ─────────────────────────────────────────────────
 def _clean_text(text: str) -> str:
@@ -245,6 +305,13 @@ class TripleExtractor:
 
                 subject = self._normalize(subject)
                 obj = self._normalize(obj)
+
+                # 质量过滤：跳过无效概念
+                if not _is_valid_concept(subject) or not _is_valid_concept(obj):
+                    continue
+                # 跳过自环关系（subject == obj）
+                if subject == obj:
+                    continue
 
                 # 去重
                 key = (subject, relation, obj)

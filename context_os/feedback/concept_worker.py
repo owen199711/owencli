@@ -28,6 +28,9 @@ if TYPE_CHECKING:
     from context_os.memory.long_term import LongTermMemory
     from context_os.memory.semantic import SemanticMemory
 
+# 运行时导入：概念质量验证
+from context_os.feedback.triple_extractor import _is_valid_concept
+
 logger = get_logger(__name__)
 
 # 常量
@@ -283,7 +286,7 @@ class BackgroundConceptWorker:
             return []
 
         # 查询 long_term 类型的记忆，筛选 metadata.concept_pending=True
-        rows = await self._ltm.store.execute(
+        rows = await self._ltm.store.query(
             "SELECT * FROM memories "
             "WHERE type = 'long_term' "
             "AND user_id = ? "
@@ -351,6 +354,8 @@ class BackgroundConceptWorker:
     ) -> int:
         """将三元组写入 Knowledge 层（concepts + relations）。
 
+        写入前对概念名称进行质量验证，跳过无效概念。
+
         Args:
             triples: [(subject, relation, object), ...]
 
@@ -360,6 +365,12 @@ class BackgroundConceptWorker:
         count = 0
         for subject, relation, obj in triples:
             try:
+                # 质量过滤：跳过无效概念
+                if not _is_valid_concept(subject, min_len=3) or not _is_valid_concept(obj, min_len=3):
+                    continue
+                if subject == obj:
+                    continue
+
                 # 确保概念存在
                 await self._knowledge.add_concept(
                     name=subject,
@@ -418,14 +429,34 @@ class BackgroundConceptWorker:
 
 _CHANNEL_B_PROMPT_TMPL = """你是一个知识图谱构建助手。请从以下文本中提取出「主语-关系-宾语」三元组。
 
-规则：
-1. 只提取明确的关系，不要编造。
-2. 关系类型应简洁（如：是、属于、基于、包含、依赖、使用、调用、实现）。
+核心原则：
+1. 主语和宾语必须是完整的语义实体（人名、组织、技术术语、数值、事件等），不能是文本碎片或单个字。
+2. 只提取明确表达的关系，不要编造或推测。
 3. 每条输入文本可能产生 0 个或多个三元组。
+
+关系类型（只能从以下选择）：
+  - 是 / 属于 / 包含 / 基于 / 依赖 / 使用 / 调用 / 实现 / 产出 / 导致 / 协作
+
+实体命名规范：
+  - 人名用全名或简称（如 "Alice", "Bob", "Charlie"）
+  - 技术术语用标准名称（如 "PostgreSQL", "React", "Docker"）
+  - 数值信息附带单位（如 "3000元", "50%", "15ms"）
+  - 组织/项目名用完整名称（如 "Alpha项目", "创业团队"）
+
+正确示例 ✓：
+  [{{"subject": "Alpha项目", "relation": "使用", "object": "React"}},
+   {{"subject": "Bob", "relation": "协作", "object": "Alice"}},
+   {{"subject": "服务器", "relation": "包含", "object": "CPU"}},
+   {{"subject": "Alice", "relation": "支付", "object": "200元"}}]
+
+错误示例 ✗（不要输出这样的碎片）：
+  [{{"subject": "的", "relation": "是", "object": "在"}},
+   {{"subject": "J", "relation": "使用", "object": "a"}},
+   {{"subject": "L bash psql", "relation": "使用", "object": "r"}}]
 
 输出格式（JSON 数组）：
 [
-  {{"subject": "主概念", "relation": "关系", "object": "宾概念"}},
+  {{"subject": "主实体", "relation": "关系类型", "object": "宾实体"}},
   ...
 ]
 

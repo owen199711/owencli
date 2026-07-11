@@ -80,14 +80,16 @@ class ReportGenerator:
         # 构建 Memory Benchmark 表格
         mem_rows = ""
         for mb in mem_benchmarks:
+            r_final = mb.get("review_final_score", 0)
+            r_simple = mb.get("review_simple_score", 0)
+            delta = r_final - r_simple
             mem_rows += f"""
             <tr>
                 <td>{_h(mb.get("case_id"))}</td>
                 <td>{_h(mb.get("description", ""))[:50]}</td>
-                <td>{mb.get("simple_avg_score", 0):.1%}</td>
-                <td>{mb.get("avg_keyword_score", 0):.1%}</td>
-                <td>{mb.get("avg_judge_score", 0):.1%}</td>
-                <td>{mb.get("avg_final_score", 0):.1%}</td>
+                <td>{r_simple:.1%}</td>
+                <td>{r_final:.1%}</td>
+                <td>{delta:+.0%}</td>
                 <td>{"✅" if mb.get("passed") else "❌"}</td>
             </tr>"""
 
@@ -180,7 +182,7 @@ class ReportGenerator:
 
 <h2>Memory Benchmark</h2>
 <table>
-<tr><th>Case</th><th>Description</th><th>Simple</th><th>Keyword</th><th>Judge</th><th>Final</th><th>Pass</th></tr>
+<tr><th>Case</th><th>Description</th><th>Simple</th><th>Memory</th><th>Δ</th><th>Pass</th></tr>
 {mem_rows}
 </table>
 
@@ -233,14 +235,16 @@ class ReportGenerator:
 
         # Memory
         if mem_benchmarks:
-            print(f"\n  ── Memory Benchmark ──")
-            print(f"  {'Case':6s} │ {'Simple':8s} │ {'Keyword':8s} │ {'Judge':8s} │ {'Final':8s} │ Pass")
-            print(f"  {'─'*6}┼{'─'*10}┼{'─'*10}┼{'─'*10}┼{'─'*10}┼{'─'*6}")
+            print(f"\n  ── Memory Benchmark (回顾轮专分) ──")
+            print(f"  {'Case':6s} │ {'Simple':8s} │ {'Memory':8s} │ {'Δ':8s} │ Pass")
+            print(f"  {'─'*6}┼{'─'*10}┼{'─'*10}┼{'─'*10}┼{'─'*6}")
             for mb in mem_benchmarks:
+                r_final = mb.get("review_final_score", 0)
+                r_simple = mb.get("review_simple_score", 0)
+                delta = r_final - r_simple
                 status = "✅" if mb.get("passed") else "❌"
-                print(f"  {mb.get('case_id', '?'):6s} │ {mb.get('simple_avg_score', 0):.0%}     │ "
-                      f"{mb.get('avg_keyword_score', 0):.0%}     │ {mb.get('avg_judge_score', 0):.0%}     │ "
-                      f"{mb.get('avg_final_score', 0):.0%}     │ {status}")
+                print(f"  {mb.get('case_id', '?'):6s} │ {r_simple:.0%}     │ "
+                      f"{r_final:.0%}     │ {delta:+.0%}     │ {status}")
 
         # Intent
         intent_results = results.get("intent_benchmarks", [])
