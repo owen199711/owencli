@@ -1,7 +1,24 @@
 [project]
 name = "context-os"
-version = "0.1.0"
-description = "Context-OS: AI Agent Context Management System"
+version = "0.2.0"
+description = "Context-OS: AI Agent Context Management System — 带长期记忆的 MCP Server"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "owencli"},
+]
+keywords = ["agent", "context", "memory", "llm", "mcp", "claude-codex"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0",
@@ -11,7 +28,16 @@ dependencies = [
     "numpy>=1.24",
     "httpx>=0.25",
     "aiosqlite>=0.19",
+    "mcp>=1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/owen199711/owencli"
+Repository = "https://github.com/owen199711/owencli"
+Documentation = "https://github.com/owen199711/owencli"
+
+[project.scripts]
+context-os-mcp = "claude_codex_mcp.server:main"
 
 [project.optional-dependencies]
 dev = [
@@ -32,6 +58,18 @@ trace = [
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
 ]
+
+[tool.setuptools.packages.find]
+include = [
+    "context_os",
+    "context_os.*",
+    "claude_codex_mcp",
+    "claude_codex_mcp.*",
+]
+
+[tool.setuptools.package-data]
+"context_os" = ["*.yaml", "*.yml"]
+"claude_codex_mcp" = ["*.json"]
 
 [tool.ruff]
 line-length = 100

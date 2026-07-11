@@ -25,6 +25,7 @@ from context_os.core.models import (
 from context_os.events.bus import EventBus
 from context_os.feedback.concept_worker import BackgroundConceptWorker
 from context_os.feedback.evaluator import QualityEvaluator
+from context_os.feedback.journal_processor import JournalProcessor
 from context_os.feedback.memory_updater import MemoryUpdater
 from context_os.feedback.tracer import Tracer
 from context_os.feedback.triple_extractor import TripleExtractor
@@ -210,6 +211,21 @@ class ContextOSPipeline:
             experience_memory=self.experience_memory,
             concept_worker=self.concept_worker,
             knowledge_queue=self.knowledge_queue,
+        )
+
+        # ── Journal Processor（Phase 9: Journal 驱动持久化写入）──
+        # 订阅 journal:created，通过 EventBus 异步处理：
+        #   Journal → WriteDecision → MemoryRouter → LongTerm/Experience
+        #   Journal → Session（零门槛）
+        self.journal_processor = JournalProcessor(
+            event_bus=self.event_bus,
+            long_term_memory=self.long_term_memory,
+            semantic_memory=self.semantic_memory,
+            experience_memory=self.experience_memory,
+            session_memory=self.short_term_memory,
+            knowledge_queue=self.knowledge_queue,
+            concept_worker=self.concept_worker,
+            embedding_provider=self._embedding_provider,
         )
 
         # ── LLM ──
