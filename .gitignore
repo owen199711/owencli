@@ -21,6 +21,10 @@ Thumbs.db
 
 # Data
 data/
+**/memory_*.json
+**/semantic_*.json
+**/episode_*.json
+results/
 
 # Logs
 *.log
