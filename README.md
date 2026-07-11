@@ -100,34 +100,32 @@ asyncio.run(main())
 
 ### Memory（记忆系统 — 核心亮点）
 
-10 种记忆类型，按生命周期和用途分层：
+5 类记忆层 + 独立知识系统，分层设计见 [完整架构文档](docs/MEMORY_ARCHITECTURE.md)：
 
-| 记忆类型 | 持久化 | 生命周期 | 用途 |
-|---------|--------|---------|------|
-| **WorkingMemory** | 纯内存 | 当前对话 | 活跃上下文，Token 预算控制（默认 8K），环形缓冲区 |
-| **ShortTermMemory** | SQLite | Session（默认 24h） | 用户偏好、子任务记录、错误恢复记录 |
-| **LongTermMemory** | SQLite | 跨 Session | 用户偏好/项目上下文/决策记录，Ebbinghaus 遗忘曲线自动清理 |
-| **EpisodicMemory** | SQLite | 永久 | "场景-行动-结果"故事化记录，成功/失败经验 |
-| **SemanticMemory** | SQLite | 永久 | 知识图谱（Concept → Relation → Concept），BFS 子图查询 |
-| **FactMemory** | SQLite | 永久 | 版本化 KV 存储（支持历史版本追溯、置信度管理） |
-| **ProceduralMemory** | SQLite | 永久 | 工作流步骤模式存储（附带成功率统计） |
-| **ReflectionMemory** | SQLite | 永久 | Agent 自我反思（根因分析/经验教训/预防措施） |
-| **TaskMemory** | SQLite | 永久 | 任务执行记录（状态/耗时/Token 用量） |
-| **ToolExperienceMemory** | SQLite | 永久 | 工具调用成功率/平均耗时统计 |
+| 记忆层 | 回答的问题 | 存储 | 生命周期 |
+|--------|-----------|------|---------|
+| **Working** | "我现在在干什么？" | 纯内存 Ring Buffer，容量 8000 tokens | 当前 session，FIFO 淘汰 |
+| **Session** | "这次对话发生了什么？" | SQLite `memories` (type="session")，TTL 24h | 单次 session |
+| **LongTerm** | "我对用户/项目了解什么？" | SQLite `memories` (type="long_term")，Fact + Summary | 跨 session |
+| **Experience** | "我以前做过什么？学到了什么？" | SQLite `experiences` (多标签 tags JSON 数组) | 跨 session |
+| **+Knowledge** | "概念之间怎么关联？" | SQLite `concepts` + `concept_relations`（知识图谱） | 跨 session，不衰减 |
 
-**记忆检索排序算法**（定义于 `optimizer/ranker.py`）：
+**写入流程**：Pipeline 执行完成 → Journal.append()（写前日志） → EventBus 分发 → Write Decision 三层门控：
+
 ```
-score = 0.5 × 语义相似度(cosine) + 0.3 × 时间衰减(exp) + 0.2 × 访问频率(log)
+Layer 1（规则必存）: 显式记忆指令、KV 键值对、任务关键结论 → 直接通过
+Layer 2（新颖度）  : embedding cosine > 0.9 → 实体值对比 → 更新或丢弃
+Layer 3（重要性）  : 5 维加权评分（Identity 0.30 + State 0.20 + Task 0.20 + Cold Start 0.15 + Quality 0.15）
+                  → 阈值 ≥ 0.50 通过 → Memory Router 分流
 ```
 
-**记忆写入策略**（定义于 `feedback/memory_updater.py`）：
-| 层级 | 条件 | 内容 |
-|------|------|------|
-| Working | 每次执行 | 用户输入 + LLM 回复 |
-| ShortTerm | 每次执行 | 任务完成记录 |
-| LongTerm | reward ≥ 0.7 | 高质量问答对 |
-| Episodic | 总是 | success / failure 经验 |
-| Semantic | 批量抽象 | 从高频 Episodic 标签提炼概念 |
+**检索流程**：UnifiedRetriever（5 个 SourceAdapter）→ 跨源统一 6 维评分 + source_weight → 排序截断：
+
+```
+score = 0.30 × semantic + 0.20 × bm25 + 0.15 × source_reliability
+      + 0.10 × time_decay + 0.15 × relevance_boost + 0.10 × access_frequency
+final = score × source_weight (LTM=1.0 > Experience=0.8 > Knowledge=0.6 > Journal=0.4 > Session=0.3)
+```
 
 ### Builder（上下文构建）
 | 模块 | 职责 |
@@ -236,61 +234,80 @@ context-os:
 
 ## Benchmark 结果
 
-6 个测试用例（T5~T10），模拟长链连续对话场景，对比**无记忆** vs **Context-OS 分层记忆系统**的回复质量。
+最新测试时间：2026-07-10，模型：DeepSeek，整体评分 **88.5% (B+)**。
 
 ### 测试场景
 
-| ID | 场景 | 对话轮次 | 核心挑战 |
-|----|------|---------|---------|
-| T5 | 钱包收支追踪 | 8 轮 | 长链数值累积，需追溯初始值 |
-| T6 | 配置项多次覆盖 | 7 轮 | 同一属性反复修改，需追踪最新值 |
-| T7 | 个人偏好演变 | 5 轮 | 立场多次反转，需回答转变节点 |
-| T8 | 人际关系跃迁 | 5 轮 | 关系状态多次跃迁，需梳理完整时间线 |
-| T9 | 职业理想转向 | 5 轮 | 需回忆所有被放弃的目标及原因 |
-| T10 | 多属性并发演变 | 7 轮 | 三个属性轮流变化，不可混淆 |
+| ID | 场景 | 核心挑战 |
+|----|------|---------|
+| T1 | 多用户金融管理 | 跨用户追踪收入/支出/冲正/利息，多实体推理 |
+| T2 | 多层配置级联 | 全局→项目→用户三级配置继承与覆盖关系 |
+| T3 | 社交关系网络 | 多角色关系链（认识/合作/怀疑/和解等）动态演变 |
+| T4 | 系统监控时序 | CPU/内存/磁盘/TPS 多指标持续变化趋势分析 |
+| T5 | 钱包余额推理 | 长链数值累积，需从反向问题追溯初始余额 |
+| T6 | 跨会话记忆干扰 | Session B 需正确引用 Session A 的完整配置链 |
 
 ### 评估方式
 
-- **关键词命中率**：每轮回答是否包含预期关键词（粗略评估）
-- **精确匹配**：最后一问的标准答案是否完全正确（严格评估）
-- LLM: DeepSeek Chat
-
-### 总体结果
+三层加权评估：
 
 ```
-  全部测试平均质量（关键词）:
-    无记忆系统: 70.2%
-    有记忆系统: 91.3%
-    提升幅度:   +21.2%
-
-  精确匹配胜负: 记忆系统 1 胜 / 0 负 / 1 平
-  ✅ 结论: 记忆系统有效 — 在需要跨轮记忆的任务中显著提升正确率。
+final_score = 0.30 × keyword_recall + 0.40 × llm_judge + 0.30 × structured_compare
 ```
 
-### 各场景详情
+- **Keyword Recall（30%）**：预期关键词是否出现在回复中
+- **LLM Judge（40%）**：LLM 根据 ground truth 评分（0-10）
+- **Structured Compare（30%）**：JSON 字段级精确匹配
 
-| 场景 | 无记忆(关键词) | 有记忆(关键词) | 无记忆(精确) | 有记忆(精确) |
-|------|---------------|---------------|-------------|-------------|
-| T5 钱包追踪 | 33.3% | 100% | ❌ | ✅ |
-| T6 配置覆盖 | 83.3% | 47.6% | — | — |
-| T7 偏好演变 | 80.0% | 100% | — | — |
-| T8 人际关系 | 93.3% | 100% | — | — |
-| T9 职业理想 | 80.0% | 100% | ✅ | ✅ |
-| T10 多属性 | 86.7% | 81.0% | — | — |
+### 记忆 Benchmark（6 用例）
 
-> **注意**：T6 配置覆盖场景有记忆低于无记忆，原因是 Optimizer 对话压缩的 Token 阈值不足（已修复，`max_tokens=2000` → `32000`），修复后预期与其他场景一致。
+| Case | SimpleAgent | MemoryAgent | Δ 提升 | Pass |
+|------|:-----------:|:-----------:|:------:|:----:|
+| T1 金融多用户 | 0% | **68%** | +68% | ✅ |
+| T2 配置级联 | 36% | **100%** | +64% | ✅ |
+| T3 社交网络 | 4% | **60%** | +56% | ✅ |
+| T4 系统监控 | 24% | **73%** | +49% | ✅ |
+| T5 钱包推理 | 8% | **70%** | +62% | ✅ |
+| T6 跨会话 | 56% | **100%** | +44% | ✅ |
+
+**汇总：**
+
+| 指标 | 数值 |
+|------|:----:|
+| MemoryAgent 平均准确率 | **78.6%** |
+| SimpleAgent 平均准确率 | 21.3% |
+| 记忆系统提升幅度 | **+57.3%** |
+| 用例通过率 | **6/6 (100%)** |
+
+### Scoring Dashboard
+
+| 维度 | 得分 | 说明 |
+|------|:---:|------|
+| intent | 100.0% | 意图识别准确率 |
+| collection | 100.0% | 上下文数据收集 |
+| builder | 100.0% | 上下文构建 |
+| **memory** | **78.6%** | 记忆系统准确率 |
+| recall | 100.0% | 记忆检索召回率 |
+| compression | 76.0% | 上下文压缩效率 |
+| feedback | 100.0% | 反馈闭环 |
+| reflection | 100.0% | 自我反思 |
+| pipeline | 52.7% | 全链路延迟评分 |
+| **Overall** | **88.5% (B+)** | |
+
+### 关键结论
+
+- 记忆系统在所有 6 个测试用例上显著优于无记忆基线，平均提升 **+57.3%**
+- 所有模块测试通过率 **100%**
+- pipeline 延迟评分 52.7%，仍有优化空间
+- 详细架构说明见 [docs/MEMORY_ARCHITECTURE.md](docs/MEMORY_ARCHITECTURE.md)
 
 ### 运行评测
 
 ```powershell
-# 对比测试（6 个场景，无需下载数据）
+# 完整 Benchmark（所有测试）
 cd d:\study\owencli
 $env:DEEPSEEK_API_KEY = ""
-python examples\memory_comparison.py
-
-# 学术基准 LongMemEval（500 题，需下载数据集）
-python examples\download_longmemeval.py
-python examples\longmemeval_benchmark.py --max-eval 20
+python -m benchmark.run --mode all
 ```
 
 ---
@@ -307,24 +324,46 @@ context_os/
 ├── intent/                  # Classifier + Extractor + Parser
 ├── orchestrator/            # Selector + Router
 ├── collection/              # Identity + Conversation + Environment
-├── memory/                  # 10 种记忆 + SQLiteStore + Embedding
+├── memory/                  # 5 层记忆系统 + SQLiteStore + Embedding
 ├── builder/                 # ContextBuilder + ContextMerger
 ├── optimizer/               # Ranker + Compressor + Budget
-├── packager/                # ContextPackager + Adapters
+├── packager/                # ContextPackager + Adapters (Claude/OpenAI/DeepSeek)
 ├── llm/                     # Anthropic / OpenAI / DeepSeek 客户端
 ├── feedback/                # Evaluator + Tracer + MemoryUpdater
 ├── pipeline/                # Middleware Chain 引擎 + EventBus
-├── store/                   # StoreProvider + StoreSession
 └── scripts/                 # 运行脚本
+
+benchmark/                   # 基准测试框架
+├── run.py                   # 入口
+├── benchmark_runner.py      # 7 种测试类型
+├── evaluator.py             # 三层评估引擎
+├── metrics.py               # 指标聚合
+├── reporter.py              # HTML/JSON/Console 报告
+├── agents.py                # SimpleAgent vs MemoryAgent
+├── observer.py              # Pipeline 执行观察器
+├── assertions.py            # 模块断言
+├── datasets/                # 6 个记忆用例 + 5 个意图用例
+└── reports/                 # 生成的测试报告
+
+docs/
+├── MEMORY_ARCHITECTURE.md   # 记忆系统架构文档
+└── ...
 
 examples/
 ├── basic_pipeline.py        # 基本使用示例
-├── custom_adapter.py        # 自定义 Adapter 示例
-├── longmemeval_benchmark.py # LongMemEval 基准测试
-└── memory_comparison.py     # 记忆对比分析
+└── ...
 
-tests/                       # 单元测试
+java-context-os/             # Java 生产部署版本（Spring Boot + Maven）
+├── behavior/                # 行为模式学习
+├── runtime/                 # Agent 运行时状态管理
+├── importances/             # 6 维度记忆重要性评分器
+├── feedback/extraction/     # LLM/Rule 事实提取引擎
+└── ...
+
+tests/                       # 单元测试（294 个）
 ```
+
+> 完整技术文档见 [docs/MEMORY_ARCHITECTURE.md](docs/MEMORY_ARCHITECTURE.md) — 涵盖写入流程、检索排序、设计原则、存储表设计等。
 
 ---
 

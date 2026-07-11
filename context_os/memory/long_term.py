@@ -718,6 +718,54 @@ class LongTermMemory:
         facts.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return facts
 
+    async def query_summaries(
+        self,
+        category: Optional[str] = None,
+        limit: int = 100,
+        user_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """按类别查询摘要（Phase 8 补齐，对应 MEMORY_SYSTEM_DESIGN §5.2）。
+
+        过滤条件：type='long_term' 且 metadata.ltm_subtype='summary'。
+        Summary 没有 entity_key，不可 diff，不可覆盖，纯语义检索。
+
+        Args:
+            category: 类别过滤（可选，匹配 metadata.category）。
+            limit: 返回上限。
+            user_id: 用户 ID。
+
+        Returns:
+            摘要记录 dict 列表，按时间倒序。
+        """
+        uid = user_id or self.user_id
+        results = await self.store.query_memories(
+            type="long_term",
+            user_id=uid,
+            top_k=500,
+        )
+        summaries: list[dict[str, Any]] = []
+        for r in results:
+            meta = r.get("metadata", {})
+            if isinstance(meta, str):
+                import json
+                try:
+                    meta = json.loads(meta)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            if not isinstance(meta, dict):
+                continue
+            # 过滤：ltm_subtype == 'summary'
+            if meta.get("ltm_subtype") != "summary":
+                continue
+            if category and meta.get("category") != category:
+                continue
+            summaries.append(r)
+            if len(summaries) >= limit:
+                break
+        # 按时间倒序
+        summaries.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return summaries
+
     # ── 衰减 ────────────────────────────────────────────────────
 
     async def decay_relevance(self, half_life_days: float = 7.0) -> int:

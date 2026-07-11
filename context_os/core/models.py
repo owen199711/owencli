@@ -153,6 +153,87 @@ class KnowledgeChunk(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+# ─── Knowledge Nodes (MEMORY_SYSTEM_DESIGN §7.3) ─────────────────
+
+class EntityNode(BaseModel):
+    """Triple 节点 — "X 是什么？X 跟 Y 什么关系？"
+
+    对应 concepts 表中 node_type='triple' 的记录。
+    """
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    name: str
+    node_type: str = "triple"
+    attributes: Dict[str, Any] = Field(default_factory=dict)
+    embedding: Optional[List[float]] = None
+    confidence: float = 1.0
+    user_id: str = "anonymous"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+
+    # 关联的边（运行时填充，不持久化到此模型）
+    relations: List["ConceptRelation"] = Field(default_factory=list)
+
+
+class PropertyNode(BaseModel):
+    """Property 节点 — "X 的属性是什么？"
+
+    对应 knowledge_properties 表。
+    去重规则：(entity, property_name)，值冲突按 source_reliability 裁决。
+    """
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    entity: str
+    property_name: str
+    value: str
+    source_reliability: float = 0.5
+    confidence: float = 0.7
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+
+
+class DocumentNode(BaseModel):
+    """Document 节点 — 长文本语义检索块。
+
+    对应 knowledge_documents 表。
+    去重规则：embedding sim > 0.95 跳过。
+    """
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    content: str
+    embedding: Optional[List[float]] = None
+    source: str = ""
+    chunk_index: int = 0
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TaxonomyNode(BaseModel):
+    """Taxonomy 节点 — "X 属于哪类？"
+
+    对应 knowledge_taxonomy 表。
+    去重规则：(name) 去重，更新 parent。
+    """
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    name: str
+    parent: str = ""
+    level: int = 0
+    description: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ConceptRelation(BaseModel):
+    """概念关系边（Triple 的 relation）。
+
+    对应 concept_relations 表。
+    """
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    source_id: str
+    target_id: str
+    relation_type: str
+    weight: float = 1.0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class ToolContext(BaseModel):
     name: str
     schema: Dict[str, Any] = Field(default_factory=dict)

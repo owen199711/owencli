@@ -62,6 +62,7 @@ class SQLiteStore:
         name            TEXT UNIQUE NOT NULL,
         attributes      TEXT DEFAULT '{}',
         embedding       TEXT,
+        node_type       TEXT DEFAULT 'triple',  -- 'triple' | 'property' | 'taxonomy'
         confidence      REAL DEFAULT 1.0,
         user_id         TEXT DEFAULT 'anonymous',
         created_at      TEXT NOT NULL DEFAULT (datetime('now')),
@@ -234,6 +235,10 @@ class SQLiteStore:
 
             # 执行建表 DDL（使用 executescript 避免 ; 分割问题）
             await self._conn.executescript(self._DDL)
+
+            # 迁移：为旧数据库添加 node_type 列（Phase 8 补齐）
+            await self._migrate_node_type()
+
             await self._conn.commit()
 
             logger.info("SQLite database initialized: %s", self._db_path)
@@ -249,6 +254,22 @@ class SQLiteStore:
             await self._conn.close()
             self._conn = None
             logger.info("SQLite connection closed")
+
+    async def _migrate_node_type(self) -> None:
+        """迁移：为旧 concepts 表补充 node_type 列。
+
+        设计文档 MEMORY_SYSTEM_DESIGN.md §12.3 要求 concepts 表包含 node_type，
+        用于区分 'triple' | 'property' | 'taxonomy' 三种节点类型。
+        此迁移兼容已创建但缺少该列的旧数据库。
+        """
+        try:
+            await self._conn.execute(
+                "ALTER TABLE concepts ADD COLUMN node_type TEXT DEFAULT 'triple'"
+            )
+            logger.info("Migration: added node_type column to concepts table")
+        except Exception:
+            # 列已存在或表不存在 → 忽略
+            pass
 
     @property
     def is_connected(self) -> bool:
