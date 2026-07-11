@@ -476,11 +476,11 @@ class ContextOSPipeline:
             2. 停止后台 ConceptWorker 并强制刷新
             3. 关闭数据库连接
         """
-        # 刷新候选缓冲区
+        # 刷新候选缓冲区（JournalProcessor 管理）
         pending_count = await self.short_term_memory.get_pending_count()
         if pending_count > 0:
             logger.info("Flushing %d pending candidates on close", pending_count)
-            await self.memory_updater._flush_candidate_buffer(self.user_id)
+            await self.journal_processor.flush(self.user_id)
 
         # 停止后台 KnowledgeUpdater（Phase 4）和 ConceptWorker
         await self.knowledge_updater.stop()

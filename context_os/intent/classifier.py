@@ -34,7 +34,7 @@ class IntentClassifier:
     _INTENT_RULES: list[tuple[list[str], IntentType, GoalType, float]] = [
         (["debug", "fix", "bug", "crash", "error", "issue", "修复", "错误", "异常"],
          IntentType.DEBUGGING, GoalType.FIX, 0.7),
-        (["write", "create", "implement", "code", "generate", "编写", "创建", "实现"],
+        (["write", "create", "implement", "code", "generate", "编写", "写", "创建", "实现"],
          IntentType.CODING, GoalType.GENERATE, 0.7),
         (["refactor", "重构", "重写", "优化"],
          IntentType.CODING, GoalType.REFACTOR, 0.7),

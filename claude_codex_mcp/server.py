@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -37,14 +38,7 @@ from context_os.llm.deepseek_client import DeepSeekClient
 
 # ── 服务名 ──
 SERVER_NAME = "context-os"
-SERVER_VERSION = "0.1.0"
-
-# ── FastMCP 实例 ──
-mcp = FastMCP(
-    SERVER_NAME,
-    description="Context-OS 长期记忆系统 — 跨会话上下文管理",
-    version=SERVER_VERSION,
-)
+SERVER_VERSION = "1.0.0"
 
 # ── 全局 Pipeline 实例（懒初始化） ──
 _pipeline: ContextOSPipeline | None = None
@@ -82,6 +76,26 @@ async def close_pipeline() -> None:
         await _pipeline.close()
         _pipeline = None
         print("[context-os] Pipeline closed", file=sys.stderr)
+
+
+@contextlib.asynccontextmanager
+async def context_os_lifespan(mcp_server: FastMCP) -> dict:
+    """FastMCP 生命周期管理。"""
+    print(f"[context-os] Starting {SERVER_NAME} over stdio...", file=sys.stderr)
+    await get_pipeline()
+    try:
+        yield {}
+    finally:
+        print("[context-os] Shutting down...", file=sys.stderr)
+        await close_pipeline()
+
+
+# ── FastMCP 实例 ──
+mcp = FastMCP(
+    SERVER_NAME,
+    instructions="Context-OS 长期记忆系统 — 跨会话上下文管理",
+    lifespan=context_os_lifespan,
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -356,25 +370,6 @@ async def record_feedback(
         f"记录一条用户{feedback_type}反馈：{content}"
     )
     return result["response"]
-
-
-# ═══════════════════════════════════════════════════════════════
-# 生命周期事件
-# ═══════════════════════════════════════════════════════════════
-
-
-@mcp.on("startup")
-async def on_startup() -> None:
-    """服务启动时初始化 Pipeline。"""
-    print(f"[context-os] Starting {SERVER_NAME} v{SERVER_VERSION}", file=sys.stderr)
-    await get_pipeline()
-
-
-@mcp.on("shutdown")
-async def on_shutdown() -> None:
-    """服务关闭时释放资源。"""
-    print("[context-os] Shutting down...", file=sys.stderr)
-    await close_pipeline()
 
 
 # ═══════════════════════════════════════════════════════════════

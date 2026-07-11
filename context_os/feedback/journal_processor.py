@@ -74,7 +74,6 @@ class JournalProcessor:
         self._decision = WriteDecision(
             ltm=long_term_memory,
             scorer=self._importance,
-            embedding_provider=embedding_provider,
         )
         self._router = MemoryRouter(
             triple_extractor=self._triple_extractor,
@@ -130,9 +129,15 @@ class JournalProcessor:
                 "JournalProcessor: Layer 1 hit, journal=%s, score=%.3f",
                 journal_id, layer1_result.score,
             )
+            # 路由 → 分发
+            route_result, triple_result = await self._router.route(
+                content=candidate_text,
+                journal_id=journal_id,
+                user_id=user_id,
+            )
             await self._router.dispatch(
-                route_result=layer1_result.route,
-                triple_result=layer1_result.triple_result,
+                route_result=route_result,
+                triple_result=triple_result,
                 content=candidate_text,
                 journal_id=journal_id,
                 user_id=user_id,
@@ -145,7 +150,7 @@ class JournalProcessor:
             await self._event_bus.publish(MemoryWrittenEvent(
                 journal_id=journal_id,
                 user_id=user_id,
-                target=layer1_result.route.target if hasattr(layer1_result, 'route') else "long_term",
+                target=route_result.target,
                 memory_id=journal_id,
                 score=layer1_result.score,
             ))
@@ -247,9 +252,15 @@ class JournalProcessor:
             result = await self._decision.decide(content, user_id=user_id)
 
             if result.should_store:
+                # 路由 → 分发
+                route_result, triple_result = await self._router.route(
+                    content=content,
+                    journal_id=record.get("entities", {}).get("journal_id", ""),
+                    user_id=user_id,
+                )
                 await self._router.dispatch(
-                    route_result=result.route,
-                    triple_result=result.triple_result,
+                    route_result=route_result,
+                    triple_result=triple_result,
                     content=content,
                     journal_id=record.get("entities", {}).get("journal_id", ""),
                     user_id=user_id,

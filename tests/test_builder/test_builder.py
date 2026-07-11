@@ -32,8 +32,8 @@ class TestContextBuilder:
         """正常构建 UnifiedContext。"""
         task = TaskSpec(
             raw_input="test",
-            intent=IntentType.QA,
-            goal=GoalType.EXPLAIN,
+            intent=IntentType.CODING,
+            goal=GoalType.GENERATE,
         )
         ctx = await builder.build(task)
         assert ctx is not None
