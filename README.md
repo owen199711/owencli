@@ -4,7 +4,7 @@
 
 ---
 
-## Benchmark 结果
+## 系统架构
 
 ![Benchmark Dashboard](docs/img.png)
 
@@ -86,6 +86,86 @@ python -m benchmark.run --mode all
 
 ---
 
+## 接入 Claude Code / Trae IDE
+
+Context-OS 提供 **MCP Server**，可通过 Model Context Protocol 直接接入 Claude Code 或 Trae IDE，让 AI 编程助手拥有跨会话的长期记忆能力。
+
+### 安装
+
+```bash
+pip install context-os
+```
+
+### 配置 Claude Code
+
+编辑 `~/.claude/settings.json`（或项目的 `.claude/settings.local.json`）：
+
+```json
+{
+  "mcpServers": {
+    "context-os": {
+      "description": "Context-OS 长期记忆 — 跨会话上下文管理",
+      "command": "context-os-mcp",
+      "args": [],
+      "env": {
+        "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY}",
+        "CONTEXT_OS_DB_PATH": "~/context-os/data/context_os.db",
+        "CONTEXT_OS_USER_ID": "claude-codex"
+      }
+    }
+  }
+}
+```
+
+### 配置 Trae IDE
+
+Trae IDE 使用 MCP 配置文件（根据文档选择对应路径），内容同上。
+
+### 工作原理
+
+```
+Claude Code 启动
+  │
+  ├─ 读取 settings.json → 发现 mcpServers.context-os
+  │
+  ├─ 自动拉起子进程: context-os-mcp (stdio)
+  │    │
+  │    └─ Context-OS MCP Server，通过 stdin/stdout 通信
+  │       （不占端口、不暴露网络）
+  │
+  ├─ Claude Code 调用:
+  │   ├─ remember(content, category)   → 存入长期记忆
+  │   ├─ recall(query, top_k)          → 从记忆检索
+  │   ├─ forget(memory_id)             → 删除指定记忆
+  │   ├─ summarize_session()           → 总结会话并持久化
+  │   ├─ analyze_intent(text)          → 分析用户意图
+  │   └─ search_knowledge_graph(...)   → 查询知识图谱
+  │
+  └─ Claude Code 关闭 → 子进程自动终止
+```
+
+### 可用工具
+
+| 工具 | 功能 | Claude 何时调用 |
+|------|------|----------------|
+| `remember` | 存入长期记忆 | 用户表达偏好、告知配置、做出决策时 |
+| `recall` | 检索记忆 | 需要跨会话恢复上下文、查询之前讨论的内容 |
+| `forget` | 删除记忆 | 用户要求忘记某条信息 |
+| `summarize_session` | 总结会话并持久化 | 完成任务后、上下文窗口用尽前 |
+| `analyze_intent` | 分析意图 | 需要理解用户真实意图时 |
+| `record_feedback` | 记录反馈 | 用户纠正、表示不满意或偏好变化 |
+| `search_knowledge_graph` | 查询知识图谱 | 需要了解概念之间的关联 |
+
+### 从源码启动（开发模式）
+
+```bash
+# 1. 设置 API Key
+$env:DEEPSEEK_API_KEY = "sk-..."
+
+# 2. 直接启动 MCP Server（stdio 模式）
+python claude_codex_mcp/server.py
+```
+
 ## 快速开始
 
 ```bash
@@ -109,46 +189,6 @@ async def main():
 
 asyncio.run(main())
 ```
-
----
-
-## 系统架构
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│                         Context-OS Pipeline                        │
-│                                                                    │
-│  用户输入                                                          │
-│     │                                                              │
-│     ▼                                                              │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │
-│  │  Intent  │→ │Orchestrator│→ │Collection │→ │    Builder       │ │
-│  │ Layer    │  │          │  │ Layer     │  │  (ContextBuilder) │ │
-│  └──────────┘  └──────────┘  └──────────┘  └────────┬─────────┘ │
-│                                                      │              │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐            │              │
-│  │ Feedback │← │   LLM    │← │ Packager │←───────────┘              │
-│  │ Layer    │  │  Client  │  │          │                           │
-│  └──────────┘  └──────────┘  └──────────┘                           │
-│                                                      │              │
-│  ┌───────────────────────────────────────────────────┘              │
-│  ▼                                                                  │
-│  ┌──────────┐                                                       │
-│  │ Optimizer │  (RelevanceRanker + Compressor + Budget)             │
-│  └──────────┘                                                       │
-│                                                                    │
-│  ┌──────────────────────────────────────────────────────────┐      │
-│  │                   Memory System                           │      │
-│  │  Working │ ShortTerm │ LongTerm │ Episodic │ Semantic    │      │
-│  └──────────────────────────────────────────────────────────┘      │
-│                                                                    │
-│  ┌──────────────────────────────────────────────────────────┐      │
-│  │               SQLite Store (持久化层)                     │      │
-│  └──────────────────────────────────────────────────────────┘      │
-└────────────────────────────────────────────────────────────────────┘
-```
-
----
 
 ## 模块说明
 

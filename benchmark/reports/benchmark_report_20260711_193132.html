@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Context-OS Benchmark Report</title>
+<style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           max-width: 1000px; margin: 0 auto; padding: 20px; background: #0d1117; color: #c9d1d9; }
+    h1 { color: #58a6ff; border-bottom: 2px solid #30363d; padding-bottom: 10px; }
+    h2 { color: #8b949e; margin-top: 30px; }
+    h3 { color: #c9d1d9; }
+    .score { font-size: 2em; font-weight: bold; text-align: center; padding: 20px; }
+    .grade-A { color: #3fb950; }
+    .grade-B { color: #d29922; }
+    .grade-C { color: #f85149; }
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+    th, td { border: 1px solid #30363d; padding: 8px 12px; text-align: left; }
+    th { background: #161b22; color: #8b949e; }
+    tr:nth-child(even) { background: #161b22; }
+    .summary-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin: 20px 0; }
+    .summary-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px; text-align: center; }
+    .summary-card .value { font-size: 1.5em; font-weight: bold; }
+    .summary-card .label { font-size: 0.8em; color: #8b949e; }
+    .timeline { background: #161b22; padding: 10px; border-radius: 8px; font-family: monospace; }
+    .timeline div { margin: 3px 0; }
+    .section { margin: 20px 0; padding: 15px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+    .footer { margin-top: 30px; text-align: center; color: #484f58; font-size: 0.8em; }
+</style>
+</head>
+<body>
+<h1>🧪 Context-OS Benchmark Report</h1>
+<p>Generated: 2026-07-11 19:31:32</p>
+
+<div class="score grade-B">
+    Overall Score: 78.6%
+</div>
+
+<div class="summary-grid">
+    <div class="summary-card">
+        <div class="value grade-B">78.6%</div>
+        <div class="label">Memory Accuracy</div>
+    </div>
+    <div class="summary-card">
+        <div class="value">100%</div>
+        <div class="label">Module Pass Rate</div>
+    </div>
+    <div class="summary-card">
+        <div class="value" style="color: #3fb950">
+            +57.3%</div>
+        <div class="label">vs SimpleAgent</div>
+    </div>
+</div>
+
+<h2>Module Tests</h2>
+<table>
+<tr><th>Case</th><th>Module</th><th>Status</th></tr>
+
+                <tr>
+                    <td>T1</td>
+                    <td>Intent</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T1</td>
+                    <td>Collection</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T1</td>
+                    <td>Builder</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T1</td>
+                    <td>Optimizer</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T1</td>
+                    <td>Packager</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T1</td>
+                    <td>Feedback</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T1</td>
+                    <td>Performance</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T2</td>
+                    <td>Intent</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T2</td>
+                    <td>Collection</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T2</td>
+                    <td>Builder</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T2</td>
+                    <td>Optimizer</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T2</td>
+                    <td>Packager</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T2</td>
+                    <td>Feedback</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T2</td>
+                    <td>Performance</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T3</td>
+                    <td>Intent</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T3</td>
+                    <td>Collection</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T3</td>
+                    <td>Builder</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T3</td>
+                    <td>Optimizer</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T3</td>
+                    <td>Packager</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T3</td>
+                    <td>Feedback</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>T3</td>
+                    <td>Performance</td>
+                    <td>✅</td>
+                </tr>
+</table>
+
+<h2>Pipeline Test</h2>
+
+            <div class="section">
+                <h3>Pipeline: 你好，请记住我的名字是小明，我喜欢绿色</h3>
+                <div class="timeline"><div>builder: ██████████████████████████████████████████████████ 517ms</div><div>feedback: ██████████████████████████████████████████████████ 1414ms</div><div>intent: ██████████████████████████████████████████████████ 1028ms</div><div>llm: ██████████████████████████████████████████████████ 1769ms</div><div>optimizer: █ 2ms</div><div>packager: █ 1ms</div></div>
+                <p>Total: 4735ms</p>
+            </div>
+
+<h2>Memory Benchmark</h2>
+<table>
+<tr><th>Case</th><th>Description</th><th>Simple</th><th>Memory</th><th>Δ</th><th>Pass</th></tr>
+
+            <tr>
+                <td>T1</td>
+                <td>多用户财务追踪（14轮）：13轮交易录入 + 最终回顾性事实召回（无需数值计算）</td>
+                <td>0.0%</td>
+                <td>68.2%</td>
+                <td>+68%</td>
+                <td>✅</td>
+            </tr>
+            <tr>
+                <td>T2</td>
+                <td>3层传递依赖+级联回滚（10 轮）：A→B→C 级联重置+历史快照回滚</td>
+                <td>35.6%</td>
+                <td>100.0%</td>
+                <td>+64%</td>
+                <td>✅</td>
+            </tr>
+            <tr>
+                <td>T3</td>
+                <td>5人关系追踪（10轮）：9轮关系录入 + 最终回顾性事实召回</td>
+                <td>4.5%</td>
+                <td>60.5%</td>
+                <td>+56%</td>
+                <td>✅</td>
+            </tr>
+            <tr>
+                <td>T4</td>
+                <td>10指标监控追踪（10轮）：9轮状态录入 + 最终回顾性事实召回</td>
+                <td>24.0%</td>
+                <td>72.9%</td>
+                <td>+49%</td>
+                <td>✅</td>
+            </tr>
+            <tr>
+                <td>T5</td>
+                <td>双轨并行+交叉影响+非事件识别（10 轮）：双链时序推理+交叉点+非事件</td>
+                <td>8.0%</td>
+                <td>70.0%</td>
+                <td>+62%</td>
+                <td>✅</td>
+            </tr>
+            <tr>
+                <td>T6</td>
+                <td>4 Session长程记忆（15轮）：跨Session检索+技术栈事实召回</td>
+                <td>56.0%</td>
+                <td>100.0%</td>
+                <td>+44%</td>
+                <td>✅</td>
+            </tr>
+</table>
+
+<h2>Retriever Benchmark</h2>
+<div class="section">
+            <div>query: 【初始状态】Alice 的工资卡有 5000 元，Bob 的储蓄卡有 10000 元，Charlie 的账户有 2000 → retrieved=25 (long_term=25)</div>
+            <div>query: 【初始化】服务器配置如下，请逐项记住：连接池大小=10，超时=30s，日志级别=INFO，缓存大小=512MB，最大连接 → retrieved=25 (long_term=25)</div>
+            <div>query: 【初始关系】Alice 和 Bob 是大学室友兼好友，一起创业做电商。Charlie 是他们的同班同学，和 Eve 是兄 → retrieved=25 (long_term=25)</div></div>
+
+<div class="footer">Context-OS Benchmark Framework</div>
+</body>
+</html>

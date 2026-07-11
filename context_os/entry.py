@@ -397,15 +397,22 @@ class ContextOSPipeline:
             )
             self.tracer.step_end(step, packaged.raw_prompt[:100], metrics.model_dump_json())
 
-            # 更新记忆
-            await self.memory_updater.update_from_task(
-                task=task,
-                response=str(llm_response),
-                metrics=metrics,
-                user_id=self.user_id,
+            # ── Step 6: Feedback（Journal 驱动持久化）──
+            # Working Memory（纯内存，无需 Journal）
+            candidate_text = (
+                f"User: {task.raw_input}\n"
+                f"Assistant: {str(llm_response)[:500]}"
+            )
+            self.working_memory.push(
+                candidate_text,
+                metadata={"intent": task.intent.value, "round": self._round_count + 1},
             )
 
-            # Phase 2: 写入 Journal（预写日志）
+            # Journal: WAL 入口 — 所有持久化写入的唯一数据源
+            # EventBus.publish("journal:created") → JournalProcessor
+            #   → Session（零门槛）
+            #   → WriteDecision → MemoryRouter → LongTerm/Experience
+            # publish() 使用 asyncio.gather 同步等待所有 handler 完成
             self._round_count += 1
             await self.journal.append(
                 user_id=self.user_id,
@@ -415,6 +422,11 @@ class ContextOSPipeline:
                 raw_output=str(llm_response)[:2000],
                 entities={e.name: e.value for e in task.entities} if task.entities else {},
                 task_intent=task.intent.value,
+                metadata={
+                    "task_importance": metrics.task_importance,
+                    "reward_score": metrics.reward_score,
+                    "answer_quality": metrics.answer_quality,
+                },
             )
 
             self.tracer.finish(success=metrics.success)

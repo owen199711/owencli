@@ -1,0 +1,852 @@
+{
+  "started_at": "2026-07-11T04:05:38.540260",
+  "module_tests": [
+    {
+      "case_id": "T1",
+      "modules": [
+        {
+          "name": "Intent",
+          "passed": true,
+          "details": {
+            "latency_ms": 798.2,
+            "intent": "agent",
+            "goal": "generate",
+            "confidence": 0.95,
+            "entities": [],
+            "entity_count": 0,
+            "tool_requirements": 0,
+            "knowledge_requirements": 0
+          }
+        },
+        {
+          "name": "Collection",
+          "passed": true,
+          "details": {
+            "latency_ms": 114.7,
+            "identity_present": true,
+            "conversation_turns": 7,
+            "environment_present": true
+          }
+        },
+        {
+          "name": "Builder",
+          "passed": true,
+          "details": {
+            "memory_count": 3,
+            "memory_by_type": {
+              "long_term": 3
+            }
+          }
+        },
+        {
+          "name": "Optimizer",
+          "passed": true,
+          "details": {
+            "compressed": true,
+            "token_before": 8247,
+            "token_after": 5798,
+            "token_reduced": 2449
+          }
+        },
+        {
+          "name": "Packager",
+          "passed": true,
+          "details": {
+            "prompt_chars": 1833,
+            "sections": [
+              "system",
+              "identity",
+              "memory",
+              "environment",
+              "conversation"
+            ]
+          }
+        },
+        {
+          "name": "Feedback",
+          "passed": true,
+          "details": {
+            "answer_quality": 0.9,
+            "reward_score": 0.72,
+            "cost_usd": 0.003051
+          }
+        },
+        {
+          "name": "Performance",
+          "passed": true,
+          "details": {
+            "total_ms": 4776.4,
+            "breakdown_ms": {
+              "intent": 798.2,
+              "builder": 114.7,
+              "optimizer": 4.5,
+              "packager": 0.2,
+              "llm": 2914.4,
+              "feedback": 941.3
+            }
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "T2",
+      "modules": [
+        {
+          "name": "Intent",
+          "passed": true,
+          "details": {
+            "latency_ms": 1060.1,
+            "intent": "agent",
+            "goal": "optimize",
+            "confidence": 0.95,
+            "entities": [],
+            "entity_count": 0,
+            "tool_requirements": 0,
+            "knowledge_requirements": 0
+          }
+        },
+        {
+          "name": "Collection",
+          "passed": true,
+          "details": {
+            "latency_ms": 103.0,
+            "identity_present": true,
+            "conversation_turns": 7,
+            "environment_present": true
+          }
+        },
+        {
+          "name": "Builder",
+          "passed": true,
+          "details": {
+            "memory_count": 7,
+            "memory_by_type": {
+              "long_term": 7
+            }
+          }
+        },
+        {
+          "name": "Optimizer",
+          "passed": true,
+          "details": {
+            "compressed": true,
+            "token_before": 17783,
+            "token_after": 12900,
+            "token_reduced": 4883
+          }
+        },
+        {
+          "name": "Packager",
+          "passed": true,
+          "details": {
+            "prompt_chars": 2541,
+            "sections": [
+              "system",
+              "identity",
+              "memory",
+              "environment",
+              "conversation"
+            ]
+          }
+        },
+        {
+          "name": "Feedback",
+          "passed": true,
+          "details": {
+            "answer_quality": 0.9,
+            "reward_score": 0.72,
+            "cost_usd": 0.004026
+          }
+        },
+        {
+          "name": "Performance",
+          "passed": true,
+          "details": {
+            "total_ms": 4644.2,
+            "breakdown_ms": {
+              "intent": 1060.1,
+              "builder": 103.0,
+              "optimizer": 7.1,
+              "packager": 0.2,
+              "llm": 2487.2,
+              "feedback": 980.6
+            }
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "T3",
+      "modules": [
+        {
+          "name": "Intent",
+          "passed": true,
+          "details": {
+            "latency_ms": 738.9,
+            "intent": "agent",
+            "goal": "summarize",
+            "confidence": 0.9,
+            "entities": [],
+            "entity_count": 0,
+            "tool_requirements": 0,
+            "knowledge_requirements": 0
+          }
+        },
+        {
+          "name": "Collection",
+          "passed": true,
+          "details": {
+            "latency_ms": 126.1,
+            "identity_present": true,
+            "conversation_turns": 7,
+            "environment_present": true
+          }
+        },
+        {
+          "name": "Builder",
+          "passed": true,
+          "details": {
+            "memory_count": 11,
+            "memory_by_type": {
+              "long_term": 11
+            }
+          }
+        },
+        {
+          "name": "Optimizer",
+          "passed": true,
+          "details": {
+            "compressed": true,
+            "token_before": 27837,
+            "token_after": 18085,
+            "token_reduced": 9752
+          }
+        },
+        {
+          "name": "Packager",
+          "passed": true,
+          "details": {
+            "prompt_chars": 3698,
+            "sections": [
+              "system",
+              "identity",
+              "memory",
+              "environment",
+              "conversation"
+            ]
+          }
+        },
+        {
+          "name": "Feedback",
+          "passed": true,
+          "details": {
+            "answer_quality": 0.9,
+            "reward_score": 0.72,
+            "cost_usd": 0.005973
+          }
+        },
+        {
+          "name": "Performance",
+          "passed": true,
+          "details": {
+            "total_ms": 5532.0,
+            "breakdown_ms": {
+              "intent": 738.9,
+              "builder": 126.1,
+              "optimizer": 11.9,
+              "packager": 0.3,
+              "llm": 3612.8,
+              "feedback": 1033.3
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "pipeline_tests": [
+    {
+      "input": "你好，请记住我的名字是小明，我喜欢绿色",
+      "response": "你好，小明！我已经记住了你的名字和喜好：你喜欢绿色。🌿\n\n以后有任何需要帮助的地方，随时告诉我！",
+      "latency_ms": 2640.8,
+      "breakdown": {
+        "intent": 899.2,
+        "builder": 112.1,
+        "optimizer": 1.7,
+        "packager": 0.3,
+        "llm": 1510.4,
+        "feedback": 115.5
+      },
+      "modules": [
+        {
+          "name": "Intent",
+          "passed": true
+        },
+        {
+          "name": "Collection",
+          "passed": true
+        },
+        {
+          "name": "Builder",
+          "passed": true
+        },
+        {
+          "name": "Optimizer",
+          "passed": false
+        },
+        {
+          "name": "Packager",
+          "passed": true
+        },
+        {
+          "name": "Feedback",
+          "passed": true
+        },
+        {
+          "name": "Performance",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "memory_benchmarks": [
+    {
+      "case_id": "T1",
+      "description": "多用户财务追踪（14轮）：13轮交易录入 + 最终回顾性事实召回（无需数值计算）",
+      "avg_keyword_score": 0.9957983193277311,
+      "avg_judge_score": 1.0,
+      "avg_final_score": 0.9773109243697479,
+      "simple_avg_score": 0.9334733893557423,
+      "passed": true,
+      "round_count": 14
+    },
+    {
+      "case_id": "T2",
+      "description": "3层传递依赖+级联回滚（10 轮）：A→B→C 级联重置+历史快照回滚",
+      "avg_keyword_score": 1.0,
+      "avg_judge_score": 1.0,
+      "avg_final_score": 1.0,
+      "simple_avg_score": 0.9235714285714286,
+      "passed": true,
+      "round_count": 10
+    },
+    {
+      "case_id": "T3",
+      "description": "5人关系追踪（10轮）：9轮关系录入 + 最终回顾性事实召回",
+      "avg_keyword_score": 0.8949999999999999,
+      "avg_judge_score": 0.9,
+      "avg_final_score": 0.8685,
+      "simple_avg_score": 0.7,
+      "passed": true,
+      "round_count": 10
+    },
+    {
+      "case_id": "T4",
+      "description": "10指标监控追踪（10轮）：9轮状态录入 + 最终回顾性事实召回",
+      "avg_keyword_score": 0.9652173913043478,
+      "avg_judge_score": 0.96,
+      "avg_final_score": 0.9585652173913044,
+      "simple_avg_score": 0.9317228260869566,
+      "passed": true,
+      "round_count": 10
+    },
+    {
+      "case_id": "T5",
+      "description": "双轨并行+交叉影响+非事件识别（10 轮）：双链时序推理+交叉点+非事件",
+      "avg_keyword_score": 1.0,
+      "avg_judge_score": 1.0,
+      "avg_final_score": 0.97,
+      "simple_avg_score": 0.923,
+      "passed": true,
+      "round_count": 10
+    },
+    {
+      "case_id": "T6",
+      "description": "4 Session长程记忆（15轮）：跨Session检索+技术栈事实召回",
+      "avg_keyword_score": 0.9333333333333333,
+      "avg_judge_score": 0.9333333333333333,
+      "avg_final_score": 0.9333333333333333,
+      "simple_avg_score": 0.8533333333333334,
+      "passed": true,
+      "round_count": 15
+    }
+  ],
+  "retriever_benchmarks": [
+    {
+      "query": "【初始状态】Alice 的工资卡有 5000 元，Bob 的储蓄卡有 10000 元，Charlie 的账户有 2000 元。Diana 新开了两个账户：A 账户（活期）存了 3000 元，B 账户（定期）存了 10000 元，活期利率 0.3%，定期利率 2.5%。",
+      "total_retrieved": 50,
+      "by_type": {
+        "long_term": 50
+      },
+      "retrieved_items": [
+        {
+          "type": "long_term",
+          "content": "User: 【初始状态】Alice 的工资卡有 5000 元，Bob 的储蓄卡有 10000 元，Charlie 的账户有 2000 元。Diana 新开了两个",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【支出 1】Bob 交了房租 3000 元。\nAssistant: 好的，我已记录下这笔交易。\n\n根据您提供的所有信息，现将相关事实整理如下：\n\n-",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【收入 1】Alice 工资到账 8000 元。\nAssistant: 好的，我已记录下这笔交易。\n\n根据您提供的所有信息，现将相关事实整理如下：\n",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【收入 2】Charlie 收到退款 500 元。\nAssistant: 好的，我已记录下这笔交易。\n\n根据您提供的所有信息，现将相关事实整理如下：",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【支出 2】Alice 买手机花了 5999 元。\nAssistant: 好的，我已记录下这笔交易。\n\n根据您提供的所有信息，现将相关事实整理如下：",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【收入 3】Bob 报销餐费 200 元入账。\nAssistant: 好的，我已记录下这笔交易。\n\n根据您提供的所有信息，现将相关事实整理如下：\n\n",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【冲正】上周 Charlie 有一笔 800 元的转账被错误扣款，银行今天发起了冲正，资金已退回。\nAssistant: 好的，我已记录下这笔冲正交",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【收入 4】Alice 理财收益 300 元到账。\nAssistant: 好的，我已记录下这笔交易。\n\n根据您提供的所有信息，现将相关事实整理如下：",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【收入 5】Bob 年终奖 20000 元入账。\nAssistant: 好的，我已记录下这笔交易。\n\n根据您提供的所有信息，现将相关事实整理如下：\n",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【共享支出】Alice、Bob、Charlie 三人聚餐花费 900 元，AA 制均摊。\nAssistant: 好的，我已记录下这笔共享支出交易。\n",
+          "relevance": 0.0
+        }
+      ],
+      "latency_ms": 224.0
+    },
+    {
+      "query": "【初始化】服务器配置如下，请逐项记住：连接池大小=10，超时=30s，日志级别=INFO，缓存大小=512MB，最大连接数=200，读超时=10s。规则：①改连接池大小 → 超时重置为 30s；②改超时 → 读超时重置为 10s；③改最大连接数 → 连接池大小重置为 10（→ 触发规则①）。",
+      "total_retrieved": 50,
+      "by_type": {
+        "long_term": 50
+      },
+      "retrieved_items": [
+        {
+          "type": "long_term",
+          "content": "User: 【初始化】服务器配置如下，请逐项记住：连接池大小=10，超时=30s，日志级别=INFO，缓存大小=512MB，最大连接数=200，读超时=10s。",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 把最大连接数改为 500（→ 连接池→10 → 超时→30s → 读超时→10s）。\nAssistant: 好的，我已记录下这笔配置变更。\n\n根据您",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 把超时改为 45s，连接池改为 30（超时→30s，读超时→10s）。\nAssistant: 好的，我已记录下这两笔配置变更。\n\n根据您提供的信息，",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 把缓存大小改为 2048MB，读超时改为 30s。\nAssistant: 好的，我已记录下这两项配置变更。\n\n---\n\n### **配置变更记录**",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 把超时改为 60s（读超时→10s）。\nAssistant: 好的，我已记录下这笔配置变更。\n\n根据您提供的信息，现将相关事实整理如下：\n\n---\n",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 把连接池大小改为 20（超时→30s，读超时→10s 因为规则②被触发）。\nAssistant: 好的，我已记录下这笔配置变更。\n\n根据您提供的信息",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【回滚操作】将连接池大小回滚到 3 轮前的值（第 3 轮时连接池=20）。（→ 超时→30s，读超时→10s）\nAssistant: 好的，我已记录",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 把日志级别改为 DEBUG，缓存大小改为 1024MB。\nAssistant: 好的，我已记录下这两项配置变更。\n\n---\n\n### **配置变更记",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 把日志级别改为 WARN，最大连接数改为 300（→ 连接池→10 → 级联全部重置）。\nAssistant: 好的，我已记录下这两项配置变更及其级",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 把最大连接数改为 500（→ 连接池→10 → 超时→30s → 读超时→10s）。\nAssistant: 好的，我已记录下这笔配置变更。\n\n根据您",
+          "relevance": 0.0
+        }
+      ],
+      "latency_ms": 255.8
+    },
+    {
+      "query": "【初始关系】Alice 和 Bob 是大学室友兼好友，一起创业做电商。Charlie 是他们的同班同学，和 Eve 是兄妹。Diana 是转系来的学姐，目前只和 Charlie 有交流。Eve 是新生，和哥哥 Charlie 关系很好，和其他人还不认识。",
+      "total_retrieved": 50,
+      "by_type": {
+        "long_term": 50
+      },
+      "retrieved_items": [
+        {
+          "type": "long_term",
+          "content": "User: 【初始关系】Alice 和 Bob 是大学室友兼好友，一起创业做电商。Charlie 是他们的同班同学，和 Eve 是兄妹。Diana 是转系来的学",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: Diana 和 Eve 在同一个社团活动中认识，发现彼此很投缘。\nAssistant: 好的，我已更新上下文信息，记录了 Diana 和 Eve 在",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: Eve 加入了 Alice 和 Charlie 的 AI 项目组，和 Alice 成了好朋友。\nAssistant: 好的，我已更新上下文信息，记录",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: 【三角关系】Bob 开始对 Eve 产生好感，经常找借口去 AI 项目组。但 Eve 似乎不感冒。同时 Diana 发现 Bob 还在和她约会的同时",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: Alice 和 Bob 因为公司的股份分配问题大吵一架，关系降到冰点，Charlie 尝试调解但失败。\nAssistant: 好的，我已更新上下文信",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: Bob 和 Diana 因为一场辩论赛互相欣赏，开始频繁约会。\nAssistant: 好的，我已更新上下文信息，记录了 Bob 和 Diana 的关",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: Bob 和 Diana 因为一场辩论赛互相欣赏，开始频繁约会。\nAssistant: 好的，我已更新上下文信息，记录了 Bob 和 Diana 的关",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: Alice 和 Bob 因为公司的股份分配问题大吵一架，关系降到冰点，Charlie 尝试调解但失败。\nAssistant: 好的，我已更新上下文信",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: Alice 和 Charlie 合作了一个 AI 项目，每周在实验室待到很晚，成了密切的合作伙伴。\nAssistant: 好的，我已更新上下文信息，",
+          "relevance": 0.0
+        },
+        {
+          "type": "long_term",
+          "content": "User: Alice 和 Charlie 合作了一个 AI 项目，每周在实验室待到很晚，成了密切的合作伙伴。\nAssistant: 好的，我已更新上下文信息，",
+          "relevance": 0.0
+        }
+      ],
+      "latency_ms": 215.9
+    }
+  ],
+  "intent_benchmarks": [
+    {
+      "case_id": "INT1",
+      "avg_intent_accuracy": 1.0,
+      "details": [
+        {
+          "question": "帮我记住小明今年18岁",
+          "expected": "STORE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "STORE_FACT"
+        },
+        {
+          "question": "帮我记住小明的身高是175cm",
+          "expected": "STORE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "STORE_FACT"
+        },
+        {
+          "question": "帮我记住小明的爱好是打篮球",
+          "expected": "STORE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "STORE_FACT"
+        },
+        {
+          "question": "帮我记住小红是班里的学习委员",
+          "expected": "STORE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "STORE_FACT"
+        },
+        {
+          "question": "帮我记住小红的生日是3月15日",
+          "expected": "STORE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "STORE_FACT"
+        }
+      ]
+    },
+    {
+      "case_id": "INT2",
+      "avg_intent_accuracy": 1.0,
+      "details": [
+        {
+          "question": "帮我记住数据库连接池大小=10",
+          "expected": "STORE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "STORE_FACT"
+        },
+        {
+          "question": "把连接池大小改成20",
+          "expected": "UPDATE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "UPDATE_FACT"
+        },
+        {
+          "question": "把连接池大小改成50",
+          "expected": "UPDATE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "UPDATE_FACT"
+        },
+        {
+          "question": "帮我记住超时时间=30秒",
+          "expected": "STORE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "STORE_FACT"
+        },
+        {
+          "question": "把超时改成60秒",
+          "expected": "UPDATE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "UPDATE_FACT"
+        }
+      ]
+    },
+    {
+      "case_id": "INT3",
+      "avg_intent_accuracy": 1.0,
+      "details": [
+        {
+          "question": "帮我记住小明的年龄是18岁，身高175cm，爱好篮球",
+          "expected": "STORE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "STORE_FACT"
+        },
+        {
+          "question": "小明今年多大了？",
+          "expected": "QUERY_FACT",
+          "actual": "qa",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "QUERY_FACT",
+          "inferred_from_text": "UNKNOWN"
+        },
+        {
+          "question": "小明的身高是多少？",
+          "expected": "QUERY_FACT",
+          "actual": "qa",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "QUERY_FACT",
+          "inferred_from_text": "QUERY_FACT"
+        },
+        {
+          "question": "小明的爱好是什么？",
+          "expected": "QUERY_FACT",
+          "actual": "qa",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "QUERY_FACT",
+          "inferred_from_text": "QUERY_FACT"
+        }
+      ]
+    },
+    {
+      "case_id": "INT4",
+      "avg_intent_accuracy": 1.0,
+      "details": [
+        {
+          "question": "帮我记住服务器的状态：CPU=50%，内存=60%",
+          "expected": "STORE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "STORE_FACT"
+        },
+        {
+          "question": "把CPU改成75%",
+          "expected": "UPDATE_FACT",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "UPDATE_FACT"
+        },
+        {
+          "question": "现在CPU是多少？",
+          "expected": "QUERY_FACT",
+          "actual": "qa",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "QUERY_FACT",
+          "inferred_from_text": "QUERY_FACT"
+        },
+        {
+          "question": "帮我总结一下服务器的所有状态",
+          "expected": "SUMMARY",
+          "actual": "qa",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "QUERY_FACT",
+          "inferred_from_text": "SUMMARY"
+        },
+        {
+          "question": "为什么CPU会从50%升到75%？分析一下可能的原因",
+          "expected": "REFLECTION",
+          "actual": "qa",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "QUERY_FACT",
+          "inferred_from_text": "REFLECTION"
+        }
+      ]
+    },
+    {
+      "case_id": "INT5",
+      "avg_intent_accuracy": 1.0,
+      "details": [
+        {
+          "question": "帮我查一下数据库里的用户表",
+          "expected": "CALL_TOOL",
+          "actual": "data_analysis",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "SUMMARY",
+          "inferred_from_text": "CALL_TOOL"
+        },
+        {
+          "question": "执行SQL: SELECT * FROM users",
+          "expected": "CALL_TOOL",
+          "actual": "data_analysis",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "SUMMARY",
+          "inferred_from_text": "CALL_TOOL"
+        },
+        {
+          "question": "帮我发一封邮件给张三",
+          "expected": "CALL_TOOL",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "UNKNOWN"
+        },
+        {
+          "question": "调用天气API查北京的天气",
+          "expected": "CALL_TOOL",
+          "actual": "agent",
+          "score": 1.0,
+          "match": true,
+          "mapped_functional": "CALL_TOOL",
+          "inferred_from_text": "CALL_TOOL"
+        }
+      ]
+    }
+  ],
+  "reflection_test": {
+    "avg_reflection_score": 1.0,
+    "details": [
+      {
+        "question": "为什么我的数据库连接总是超时？分析一下可能的原因",
+        "score": 1.0
+      },
+      {
+        "question": "昨天的系统部署失败了，帮我分析一下失败的原因和改进方案",
+        "score": 1.0
+      }
+    ]
+  },
+  "stress_test": {
+    "token_before": 64117,
+    "token_after": 47246,
+    "compressed": true,
+    "compression_ratio": 0.263,
+    "optimizer_score": 0.88
+  },
+  "dashboard": {
+    "intent": 1.0,
+    "memory": 0.9512849125157309,
+    "collection": 1.0,
+    "builder": 1.0,
+    "feedback": 1.0,
+    "optimizer": 1.0,
+    "recall": 1.0,
+    "compression": 0.88,
+    "reflection": 1.0,
+    "pipeline": 0.6,
+    "tool": null,
+    "tool_status": "未测试",
+    "overall": 0.9341,
+    "grade": "A",
+    "weights": {
+      "intent": 0.1,
+      "collection": 0.1,
+      "builder": 0.1,
+      "memory": 0.15,
+      "recall": 0.1,
+      "compression": 0.1,
+      "feedback": 0.1,
+      "reflection": 0.05,
+      "pipeline": 0.1,
+      "tool": 0.1
+    }
+  },
+  "summary": {
+    "memory_avg_final_score": 0.9512849125157309,
+    "simple_avg_final_score": 0.8775168295579102,
+    "memory_improvement": 0.07376808295782067,
+    "module_pass_rate": 1.0,
+    "total_test_cases": 6,
+    "memory_test_cases_passed": 6,
+    "overall_score": 0.9341,
+    "grade": "A"
+  }
+}
