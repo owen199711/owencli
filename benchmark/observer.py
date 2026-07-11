@@ -215,11 +215,29 @@ class PipelineObserver:
                 latency_ms=diag["llm"].get("latency_ms", 0),
                 token_count=token_estimate,
             )
-            await self.p.memory_updater.update_from_task(
-                task=task,
-                response=response_text,
-                metrics=metrics_result,
+            # Journal 驱动持久化（替代旧 memory_updater 路径）
+            candidate_text = (
+                f"User: {task.raw_input}\n"
+                f"Assistant: {response_text[:500]}"
+            )
+            self.p.working_memory.push(
+                candidate_text,
+                metadata={"intent": task.intent.value, "round": self.p._round_count + 1},
+            )
+            self.p._round_count += 1
+            await self.p.journal.append(
                 user_id=self.p.user_id,
+                session_id=self.p.session_id,
+                round_id=self.p._round_count,
+                raw_input=task.raw_input,
+                raw_output=response_text[:2000],
+                entities={e.type: e.value for e in task.entities} if task.entities else {},
+                task_intent=task.intent.value,
+                metadata={
+                    "task_importance": metrics_result.task_importance,
+                    "reward_score": metrics_result.reward_score,
+                    "answer_quality": metrics_result.answer_quality,
+                },
             )
             lat = (time.time() - t0) * 1000
             diag["feedback"] = {

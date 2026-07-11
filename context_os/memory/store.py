@@ -239,6 +239,9 @@ class SQLiteStore:
             # 迁移：为旧数据库添加 node_type 列（Phase 8 补齐）
             await self._migrate_node_type()
 
+            # 防御：验证关键表是否存在（executescript 遇错会中途停止）
+            await self._ensure_critical_tables()
+
             await self._conn.commit()
 
             logger.info("SQLite database initialized: %s", self._db_path)
@@ -270,6 +273,119 @@ class SQLiteStore:
         except Exception:
             # 列已存在或表不存在 → 忽略
             pass
+
+    async def _ensure_critical_tables(self) -> None:
+        """防御性检查：验证 executescript 之后关键表是否都已创建。
+
+        SQLite 的 executescript 遇第一个错误会停止，后续表可能未创建。
+        此方法逐表检查并补建缺失的。
+        """
+        expected = {
+            "journal": self._DDL_JOURNAL,
+            "knowledge_queue": self._DDL_KNOWLEDGE_QUEUE,
+            "knowledge_properties": self._DDL_KNOWLEDGE_PROPERTIES,
+            "knowledge_documents": self._DDL_KNOWLEDGE_DOCS,
+            "knowledge_taxonomy": self._DDL_KNOWLEDGE_TAXONOMY,
+        }
+
+        for table_name, ddl in expected.items():
+            try:
+                cursor = await self._conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    [table_name],
+                )
+                row = await cursor.fetchone()
+                if row is None and ddl:
+                    logger.warning("Table '%s' missing, creating...", table_name)
+                    # 拆分 DDL 中的多条语句逐条执行，避免 executescript 内部中断
+                    for stmt in ddl.split(";"):
+                        stmt = stmt.strip()
+                        if stmt:
+                            try:
+                                await self._conn.execute(stmt)
+                            except Exception:
+                                pass
+                    logger.info("Table '%s' created", table_name)
+            except Exception:
+                logger.debug("Table check failed for '%s', skipping", table_name)
+
+    # ── 关键表独立 DDL（供 _ensure_critical_tables + save_journal_entry 使用）──
+
+    _DDL_JOURNAL = """
+    CREATE TABLE IF NOT EXISTS journal (
+        id           TEXT PRIMARY KEY,
+        user_id      TEXT NOT NULL,
+        session_id   TEXT NOT NULL,
+        round_id     INTEGER NOT NULL,
+        raw_input    TEXT NOT NULL,
+        raw_output   TEXT DEFAULT '',
+        entities     TEXT DEFAULT '{}',
+        task_intent  TEXT DEFAULT '',
+        status       TEXT DEFAULT 'pending',
+        category     TEXT DEFAULT '',
+        processed_at TEXT,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        metadata     TEXT DEFAULT '{}'
+    )
+    """
+    _DDL_JOURNAL_INDEXES = (
+        "CREATE INDEX IF NOT EXISTS idx_journal_user ON journal(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_journal_session ON journal(session_id)",
+        "CREATE INDEX IF NOT EXISTS idx_journal_status ON journal(status)",
+        "CREATE INDEX IF NOT EXISTS idx_journal_created ON journal(created_at DESC)",
+    )
+
+    _DDL_KNOWLEDGE_QUEUE = """
+    CREATE TABLE IF NOT EXISTS knowledge_queue (
+        id          TEXT PRIMARY KEY,
+        content     TEXT NOT NULL,
+        user_id     TEXT DEFAULT 'anonymous',
+        source      TEXT DEFAULT 'channel_b',
+        status      TEXT DEFAULT 'pending',
+        priority    INTEGER DEFAULT 0,
+        retry_count INTEGER DEFAULT 0,
+        error       TEXT DEFAULT '',
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """
+
+    _DDL_KNOWLEDGE_PROPERTIES = """
+    CREATE TABLE IF NOT EXISTS knowledge_properties (
+        id                  TEXT PRIMARY KEY,
+        entity              TEXT NOT NULL,
+        property_name       TEXT NOT NULL,
+        value               TEXT NOT NULL,
+        source_reliability  REAL DEFAULT 0.5,
+        confidence          REAL DEFAULT 0.7,
+        metadata            TEXT DEFAULT '{}',
+        created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at          TEXT DEFAULT ''
+    )
+    """
+
+    _DDL_KNOWLEDGE_DOCS = """
+    CREATE TABLE IF NOT EXISTS knowledge_documents (
+        id          TEXT PRIMARY KEY,
+        content     TEXT NOT NULL,
+        embedding   TEXT,
+        source      TEXT DEFAULT '',
+        chunk_index INTEGER DEFAULT 0,
+        metadata    TEXT DEFAULT '{}',
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """
+
+    _DDL_KNOWLEDGE_TAXONOMY = """
+    CREATE TABLE IF NOT EXISTS knowledge_taxonomy (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL UNIQUE,
+        parent      TEXT DEFAULT '',
+        level       INTEGER DEFAULT 0,
+        description TEXT DEFAULT '',
+        metadata    TEXT DEFAULT '{}',
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """
 
     @property
     def is_connected(self) -> bool:
@@ -476,21 +592,52 @@ class SQLiteStore:
             logger.warning("Journal save skipped: store not connected")
             return journal_id
 
-        await self._conn.execute(
-            """INSERT INTO journal (id, user_id, session_id, round_id,
-               raw_input, raw_output, entities, task_intent, metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                journal_id, user_id, session_id, round_id,
-                raw_input, raw_output,
-                json.dumps(entities or {}),
-                task_intent,
-                json.dumps(metadata or {}),
-            ),
-        )
-        await self._conn.commit()
-        logger.debug("Journal entry saved: id=%s, round=%d", journal_id, round_id)
-        return journal_id
+        try:
+            await self._conn.execute(
+                """INSERT INTO journal (id, user_id, session_id, round_id,
+                   raw_input, raw_output, entities, task_intent, metadata)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    journal_id, user_id, session_id, round_id,
+                    raw_input, raw_output,
+                    json.dumps(entities or {}),
+                    task_intent,
+                    json.dumps(metadata or {}),
+                ),
+            )
+            await self._conn.commit()
+            logger.info("Journal entry saved: id=%s, round=%d, user=%s, intent=%s",
+                        journal_id, round_id, user_id, task_intent)
+            return journal_id
+        except Exception as e:
+            # Journal 表可能不存在（旧数据库无此表），尝试自动创建后重试
+            if "no such table: journal" in str(e):
+                logger.warning("Journal table missing, auto-creating...")
+                await self._conn.execute(self._DDL_JOURNAL)
+                for idx_sql in self._DDL_JOURNAL_INDEXES:
+                    try:
+                        await self._conn.execute(idx_sql)
+                    except Exception:
+                        pass
+                await self._conn.commit()
+                logger.info("Journal table auto-created, retrying insert")
+                # 重试
+                await self._conn.execute(
+                    """INSERT INTO journal (id, user_id, session_id, round_id,
+                       raw_input, raw_output, entities, task_intent, metadata)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        journal_id, user_id, session_id, round_id,
+                        raw_input, raw_output,
+                        json.dumps(entities or {}),
+                        task_intent,
+                        json.dumps(metadata or {}),
+                    ),
+                )
+                await self._conn.commit()
+                logger.debug("Journal entry saved (after auto-create): id=%s, round=%d", journal_id, round_id)
+                return journal_id
+            raise
 
     async def query_journal_pending(
         self,

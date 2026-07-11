@@ -420,7 +420,7 @@ class ContextOSPipeline:
                 round_id=self._round_count,
                 raw_input=task.raw_input,
                 raw_output=str(llm_response)[:2000],
-                entities={e.name: e.value for e in task.entities} if task.entities else {},
+                entities={e.type: e.value for e in task.entities} if task.entities else {},
                 task_intent=task.intent.value,
                 metadata={
                     "task_importance": metrics.task_importance,

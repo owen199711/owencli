@@ -68,6 +68,7 @@ class MemoryWrittenEvent:
     user_id: str
     target: str  # "long_term" | "experience"
     memory_id: str  # 写入后的记录 ID
+    score: float = 0.0  # 写入决策分数
     category: str = ""  # "fact" | "summary"（LongTerm）或 tag 列表（Experience）
     tags: list[str] = field(default_factory=list)
     entity_key: str = ""

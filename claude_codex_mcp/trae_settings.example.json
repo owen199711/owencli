@@ -1,15 +1,13 @@
 {
   "mcpServers": {
     "context-os": {
-      "description": "Context-OS 长期记忆系统 — 跨会话上下文管理",
-      "command": "python",
-      "args": [
-        "D:\\study\\owencli\\claude_codex_mcp\\server.py"
-      ],
+      "description": "Context-OS -- AI Agent Context Management System",
+      "command": "context-os-mcp",
+      "args": [],
       "env": {
-        "DEEPSEEK_API_KEY": "your-deepseek-api-key-here",
-        "CONTEXT_OS_DB_PATH": "D:\\study\\owencli\\data\\context_os.db",
-        "CONTEXT_OS_USER_ID": "trae-ide"
+        "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY}",
+        "CONTEXT_OS_DB_PATH": "./data/context_os.db",
+        "CONTEXT_OS_USER_ID": "trae"
       }
     }
   }

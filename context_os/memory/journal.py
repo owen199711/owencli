@@ -74,6 +74,9 @@ class JournalStore:
         """
         journal_id = uuid.uuid4().hex
 
+        logger.info("Journal append: id=%s, round=%d, user=%s, intent=%s",
+                    journal_id, round_id, user_id, task_intent)
+
         await self._store.save_journal_entry(
             journal_id=journal_id,
             user_id=user_id,
