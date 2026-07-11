@@ -127,6 +127,82 @@ class SQLiteStore:
     CREATE INDEX IF NOT EXISTS idx_exp_tags ON experiences(tags);
     CREATE INDEX IF NOT EXISTS idx_exp_tool ON experiences(user_id, tool_name);
     CREATE INDEX IF NOT EXISTS idx_exp_created ON experiences(created_at DESC);
+
+    -- Journal（预写日志，Phase 2）
+    CREATE TABLE IF NOT EXISTS journal (
+        id           TEXT PRIMARY KEY,
+        user_id      TEXT NOT NULL,
+        session_id   TEXT NOT NULL,
+        round_id     INTEGER NOT NULL,
+        raw_input    TEXT NOT NULL,
+        raw_output   TEXT DEFAULT '',
+        entities     TEXT DEFAULT '{}',
+        task_intent  TEXT DEFAULT '',
+        status       TEXT DEFAULT 'pending',
+        category     TEXT DEFAULT '',
+        processed_at TEXT,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        metadata     TEXT DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS idx_journal_user ON journal(user_id);
+    CREATE INDEX IF NOT EXISTS idx_journal_session ON journal(session_id);
+    CREATE INDEX IF NOT EXISTS idx_journal_status ON journal(status);
+    CREATE INDEX IF NOT EXISTS idx_journal_created ON journal(created_at DESC);
+
+    -- Knowledge Queue（知识提取队列，Phase 2）
+    CREATE TABLE IF NOT EXISTS knowledge_queue (
+        id          TEXT PRIMARY KEY,
+        content     TEXT NOT NULL,
+        user_id     TEXT DEFAULT 'anonymous',
+        source      TEXT DEFAULT 'channel_b',
+        status      TEXT DEFAULT 'pending',
+        priority    INTEGER DEFAULT 0,
+        retry_count INTEGER DEFAULT 0,
+        error       TEXT DEFAULT '',
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_kq_status ON knowledge_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_kq_priority ON knowledge_queue(priority DESC);
+
+    -- Knowledge Property Nodes（Phase 5: 实体属性节点）
+    CREATE TABLE IF NOT EXISTS knowledge_properties (
+        id                  TEXT PRIMARY KEY,
+        entity              TEXT NOT NULL,
+        property_name       TEXT NOT NULL,
+        value               TEXT NOT NULL,
+        source_reliability  REAL DEFAULT 0.5,
+        confidence          REAL DEFAULT 0.7,
+        metadata            TEXT DEFAULT '{}',
+        created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at          TEXT DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_kprop_entity ON knowledge_properties(entity);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_kprop_entity_prop
+        ON knowledge_properties(entity, property_name);
+
+    -- Knowledge Document Nodes（Phase 5: 文档块）
+    CREATE TABLE IF NOT EXISTS knowledge_documents (
+        id          TEXT PRIMARY KEY,
+        content     TEXT NOT NULL,
+        embedding   TEXT,
+        source      TEXT DEFAULT '',
+        chunk_index INTEGER DEFAULT 0,
+        metadata    TEXT DEFAULT '{}',
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_kdoc_source ON knowledge_documents(source);
+
+    -- Knowledge Taxonomy Nodes（Phase 5: 概念层级）
+    CREATE TABLE IF NOT EXISTS knowledge_taxonomy (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL UNIQUE,
+        parent      TEXT DEFAULT '',
+        level       INTEGER DEFAULT 0,
+        description TEXT DEFAULT '',
+        metadata    TEXT DEFAULT '{}',
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ktax_level ON knowledge_taxonomy(level);
     """
 
     def __init__(self, db_path: Optional[str] = None):
@@ -344,6 +420,434 @@ class SQLiteStore:
         if count > 0:
             logger.info("Cleaned up %d expired memories", count)
         return count
+
+    # ── Journal CRUD ─────────────────────────────────────────────
+
+    async def save_journal_entry(
+        self,
+        journal_id: str,
+        user_id: str,
+        session_id: str,
+        round_id: int,
+        raw_input: str,
+        raw_output: str = "",
+        entities: Optional[dict] = None,
+        task_intent: str = "",
+        metadata: Optional[dict] = None,
+    ) -> str:
+        """写入一条 Journal 记录。
+
+        Args:
+            journal_id: 记录 ID（UUID）。
+            user_id: 用户 ID。
+            session_id: 会话 ID。
+            round_id: 对话轮次。
+            raw_input: 用户原始输入。
+            raw_output: LLM 原文（截取前 2000 字符）。
+            entities: 提取的实体 dict。
+            task_intent: 任务意图。
+            metadata: 附加元数据。
+
+        Returns:
+            记录 ID。
+        """
+        if not self._conn:
+            logger.warning("Journal save skipped: store not connected")
+            return journal_id
+
+        await self._conn.execute(
+            """INSERT INTO journal (id, user_id, session_id, round_id,
+               raw_input, raw_output, entities, task_intent, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                journal_id, user_id, session_id, round_id,
+                raw_input, raw_output,
+                json.dumps(entities or {}),
+                task_intent,
+                json.dumps(metadata or {}),
+            ),
+        )
+        await self._conn.commit()
+        logger.debug("Journal entry saved: id=%s, round=%d", journal_id, round_id)
+        return journal_id
+
+    async def query_journal_pending(
+        self,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """查询待处理的 Journal 记录。
+
+        Args:
+            user_id: 按用户筛选（可选）。
+            session_id: 按会话筛选（可选）。
+            limit: 返回上限。
+
+        Returns:
+            待处理记录列表。
+        """
+        if not self._conn:
+            return []
+
+        conditions = ["status = 'pending'"]
+        params: list[Any] = []
+
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if session_id:
+            conditions.append("session_id = ?")
+            params.append(session_id)
+
+        where = " AND ".join(conditions)
+        cursor = await self._conn.execute(
+            f"SELECT * FROM journal WHERE {where} "
+            f"ORDER BY created_at ASC LIMIT ?",
+            [*params, limit],
+        )
+        rows = await cursor.fetchall()
+        results = [self._row_to_dict(r) for r in rows]
+        logger.debug("Journal pending: %d records", len(results))
+        return results
+
+    async def update_journal_status(
+        self,
+        journal_id: str,
+        status: str,
+        processed_at: Optional[str] = None,
+    ) -> None:
+        """更新 Journal 记录的处理状态。
+
+        Args:
+            journal_id: 记录 ID。
+            status: 新状态: 'pending' | 'processing' | 'processed' | 'discarded'。
+            processed_at: 处理时间（ISO 8601），默认当前时间。
+        """
+        if not self._conn:
+            return
+
+        processed_at = processed_at or datetime.now(timezone.utc).isoformat()
+        await self._conn.execute(
+            "UPDATE journal SET status = ?, processed_at = ? WHERE id = ?",
+            (status, processed_at, journal_id),
+        )
+        await self._conn.commit()
+        logger.debug("Journal status updated: id=%s, status=%s", journal_id, status)
+
+    async def cleanup_journal(self, older_than_days: int = 30, max_records: int = 10000) -> int:
+        """清理旧的已处理 Journal 记录。
+
+        Args:
+            older_than_days: 处理时间超过此天数后删除。
+            max_records: 总记录数超过此值后裁剪最旧的记录。
+
+        Returns:
+            删除的记录数。
+        """
+        if not self._conn:
+            return 0
+
+        deleted = 0
+
+        # 1. 删除 processed 状态超过 N 天的记录
+        cursor = await self._conn.execute(
+            """DELETE FROM journal
+               WHERE status = 'processed'
+                 AND processed_at < datetime('now', ?)""",
+            (f'-{older_than_days} days',),
+        )
+        await self._conn.commit()
+        deleted += cursor.rowcount
+
+        # 2. 总量超过 max_records 时删除最早的 5000 条
+        cursor = await self._conn.execute("SELECT COUNT(*) AS cnt FROM journal")
+        row = await cursor.fetchone()
+        if row and row["cnt"] > max_records:
+            cursor = await self._conn.execute(
+                """DELETE FROM journal WHERE id IN (
+                    SELECT id FROM journal ORDER BY created_at ASC LIMIT 5000
+                )""",
+            )
+            await self._conn.commit()
+            deleted += cursor.rowcount
+
+        if deleted > 0:
+            logger.info("Cleaned up %d journal entries", deleted)
+        return deleted
+
+    # ── Knowledge Queue CRUD ─────────────────────────────────────
+
+    async def enqueue_knowledge(
+        self,
+        content: str,
+        user_id: str = "anonymous",
+        source: str = "channel_b",
+        priority: int = 0,
+    ) -> str:
+        """向知识提取队列添加一条任务。
+
+        Args:
+            content: 待提取知识的文本内容。
+            user_id: 用户 ID。
+            source: 来源标识（'channel_b' 或 'channel_a'）。
+            priority: 优先级（越大越优先）。
+
+        Returns:
+            队列记录 ID。
+        """
+        queue_id = uuid.uuid4().hex
+
+        if not self._conn:
+            logger.warning("Knowledge enqueue skipped: store not connected")
+            return queue_id
+
+        await self._conn.execute(
+            """INSERT INTO knowledge_queue (id, content, user_id, source, priority)
+               VALUES (?, ?, ?, ?, ?)""",
+            (queue_id, content, user_id, source, priority),
+        )
+        await self._conn.commit()
+        logger.debug("Knowledge enqueued: id=%s, source=%s", queue_id, source)
+        return queue_id
+
+    async def dequeue_knowledge_batch(
+        self,
+        batch_size: int = 10,
+        user_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """从知识队列取出待处理任务并标记为 processing。
+
+        Args:
+            batch_size: 每批取出的数量。
+            user_id: 按用户筛选（可选）。
+
+        Returns:
+            任务列表（已标记为 processing），每条含 id/content/user_id/source。
+        """
+        if not self._conn:
+            return []
+
+        conditions = ["status = 'pending'"]
+        params: list[Any] = []
+
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+
+        where = " AND ".join(conditions)
+
+        # 取出 pending 任务
+        cursor = await self._conn.execute(
+            f"SELECT * FROM knowledge_queue WHERE {where} "
+            f"ORDER BY priority DESC, created_at ASC LIMIT ?",
+            [*params, batch_size],
+        )
+        rows = await cursor.fetchall()
+        results = [self._row_to_dict(r) for r in rows]
+
+        if results:
+            # 标记为 processing
+            ids = [r["id"] for r in results]
+            placeholders = ",".join("?" for _ in ids)
+            await self._conn.execute(
+                f"UPDATE knowledge_queue SET status = 'processing' WHERE id IN ({placeholders})",
+                ids,
+            )
+            await self._conn.commit()
+            logger.debug("Knowledge dequeued: %d tasks", len(results))
+
+        return results
+
+    async def mark_knowledge_done(self, queue_id: str) -> None:
+        """标记知识提取任务为完成。"""
+        if not self._conn:
+            return
+        await self._conn.execute(
+            "UPDATE knowledge_queue SET status = 'done' WHERE id = ?",
+            (queue_id,),
+        )
+        await self._conn.commit()
+
+    async def mark_knowledge_failed(self, queue_id: str, error: str = "") -> None:
+        """标记知识提取任务为失败（会记录重试次数）。"""
+        if not self._conn:
+            return
+        await self._conn.execute(
+            """UPDATE knowledge_queue
+               SET status = CASE WHEN retry_count >= 3 THEN 'failed' ELSE 'pending' END,
+                   retry_count = retry_count + 1,
+                   error = ?
+               WHERE id = ?""",
+            (error, queue_id),
+        )
+        await self._conn.commit()
+
+    # ── Knowledge Property CRUD（Phase 5）──────────────────────
+
+    async def upsert_property(
+        self,
+        entity: str,
+        property_name: str,
+        value: str,
+        source_reliability: float = 0.5,
+        confidence: float = 0.7,
+    ) -> str:
+        """插入或更新知识属性节点。
+
+        按 (entity, property_name) 去重。值冲突时按 source_reliability 裁决。
+        """
+        cache = getattr(self, "_prop_cache", None)
+        if cache is None:
+            self._prop_cache = {}
+        cache_key = f"{entity}:{property_name}"
+
+        if not self._conn:
+            return cache_key
+
+        existing = await self._conn.execute(
+            "SELECT id, value, source_reliability FROM knowledge_properties "
+            "WHERE entity = ? AND property_name = ?",
+            [entity, property_name],
+        )
+        row = await existing.fetchone()
+
+        if row is None:
+            prop_id = uuid.uuid4().hex
+            await self._conn.execute(
+                "INSERT INTO knowledge_properties "
+                "(id, entity, property_name, value, source_reliability, confidence) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [prop_id, entity, property_name, value, source_reliability, confidence],
+            )
+            await self._conn.commit()
+            return prop_id
+
+        # 值不同时按可靠性裁决
+        if row["value"] != value and source_reliability >= (row["source_reliability"] or 0.5):
+            await self._conn.execute(
+                "UPDATE knowledge_properties SET value = ?, source_reliability = ?, "
+                "confidence = ?, updated_at = ? WHERE id = ?",
+                [value, source_reliability, confidence,
+                 datetime.now(timezone.utc).isoformat(), row["id"]],
+            )
+            await self._conn.commit()
+        return row["id"]
+
+    async def query_properties(self, entity: str) -> list[dict[str, Any]]:
+        """查询实体的所有属性。"""
+        if not self._conn:
+            return []
+        cursor = await self._conn.execute(
+            "SELECT * FROM knowledge_properties WHERE entity = ?",
+            [entity],
+        )
+        return [self._row_to_dict(r) for r in await cursor.fetchall()]
+
+    # ── Knowledge Document CRUD（Phase 5）──────────────────────
+
+    async def save_document(
+        self,
+        content: str,
+        doc_id: Optional[str] = None,
+        source: str = "",
+        chunk_index: int = 0,
+        embedding: Optional[list[float]] = None,
+    ) -> str:
+        """保存知识文档块。"""
+        doc_id = doc_id or uuid.uuid4().hex
+        if not self._conn:
+            return doc_id
+        await self._conn.execute(
+            "INSERT INTO knowledge_documents (id, content, embedding, source, chunk_index) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [
+                doc_id, content,
+                json.dumps(embedding) if embedding else None,
+                source, chunk_index,
+            ],
+        )
+        await self._conn.commit()
+        return doc_id
+
+    async def query_documents(
+        self,
+        source: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """查询知识文档块。"""
+        if not self._conn:
+            return []
+        if source:
+            cursor = await self._conn.execute(
+                "SELECT * FROM knowledge_documents WHERE source = ? ORDER BY chunk_index LIMIT ?",
+                [source, limit],
+            )
+        else:
+            cursor = await self._conn.execute(
+                "SELECT * FROM knowledge_documents ORDER BY created_at DESC LIMIT ?",
+                [limit],
+            )
+        return [self._row_to_dict(r) for r in await cursor.fetchall()]
+
+    # ── Knowledge Taxonomy CRUD（Phase 5）──────────────────────
+
+    async def upsert_taxonomy(
+        self,
+        name: str,
+        parent: str = "",
+        level: int = 0,
+        description: str = "",
+    ) -> str:
+        """插入或更新概念层级。"""
+        if not self._conn:
+            return name
+
+        existing = await self._conn.execute(
+            "SELECT id FROM knowledge_taxonomy WHERE name = ?", [name],
+        )
+        row = await existing.fetchone()
+
+        if row is None:
+            tax_id = uuid.uuid4().hex
+            await self._conn.execute(
+                "INSERT INTO knowledge_taxonomy (id, name, parent, level, description) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [tax_id, name, parent, level, description],
+            )
+        else:
+            await self._conn.execute(
+                "UPDATE knowledge_taxonomy SET parent = ?, level = ?, description = ? "
+                "WHERE id = ?",
+                [parent, level, description, row["id"]],
+            )
+        await self._conn.commit()
+        return row["id"] if row else tax_id
+
+    async def query_taxonomy(
+        self,
+        parent: Optional[str] = None,
+        level: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """查询概念层级子节点。"""
+        if not self._conn:
+            return []
+
+        conditions = []
+        params = []
+        if parent is not None:
+            conditions.append("parent = ?")
+            params.append(parent)
+        if level is not None:
+            conditions.append("level = ?")
+            params.append(level)
+
+        where = " AND ".join(conditions) if conditions else "1=1"
+        cursor = await self._conn.execute(
+            f"SELECT * FROM knowledge_taxonomy WHERE {where} ORDER BY level, name",
+            params,
+        )
+        return [self._row_to_dict(r) for r in await cursor.fetchall()]
 
     # ── 通用 execute / query（供子 Memory 类型使用）──────────────
 

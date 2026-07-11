@@ -21,61 +21,19 @@ from context_os.memory.semantic import SemanticMemory
 from context_os.memory.session_memory import SessionMemory
 from context_os.memory.working import WorkingMemory
 from context_os.feedback.memory_importance import ImportanceScorer, ImportanceScore
-from context_os.feedback.triple_extractor import TripleExtractor, TripleExtractResult, _is_valid_concept
+from context_os.feedback.triple_extractor import TripleExtractor, TripleExtractResult
+from context_os.feedback.write_decision import WriteDecision, WriteDecisionResult
+from context_os.feedback.memory_router import MemoryRouter, RouteResult
 
 if TYPE_CHECKING:
     from context_os.feedback.concept_worker import BackgroundConceptWorker
 
 logger = get_logger(__name__)
 
-# ── Layer 1 常量 ──────────────────────────────────────────────
-_EXPLICIT_MEMORY_KEYWORDS = re.compile(
-    r"记住|记录|设置为|保存|不要忘记|务必记住|务必|"
-    r"remember|save|set\s+to|don'?t\s+forget|keep\s+in\s+mind",
-    re.IGNORECASE,
-)
-
-# KV 提取模式: 主语+是/住/在/喜欢/偏好/叫+宾语
-_KV_PATTERNS = [
-    re.compile(r"(?P<entity>.{1,20}?)(?:是|住在|叫|叫做|在|住|喜欢|偏好|讨厌|的)(?P<value>.{1,40}?)(?:[，。,.]|$)"),
-    re.compile(r"(?P<entity>.{1,20}?)\s*(?:is\s+called|is|live\s+in|likes?|prefers?|hates?)\s+(?P<value>.{1,40}?)(?:[.,]|$)"),
-]
-
-# 任务结论模式: LLM 回复中的结构化结论
-_CONCLUSION_PATTERNS = re.compile(
-    r"(?:余额为|总额为|结果为|总计为|余额|总计|合计|最终)"
-    r"[\s\d.,]+(?:元|个|人|次|万)",
-    re.IGNORECASE,
-)
-
 # ── 批量触发常量 ──────────────────────────────────────────────
 BATCH_SIZE_THRESHOLD = 5   # 候选区 ≥ 5 条触发
 BATCH_TURN_THRESHOLD = 10  # 对话轮次 ≥ 10 触发
 BATCH_TIMER_SECONDS = 300  # 距上次批量写入 > 5 分钟触发
-
-# ── 实体类型推断模式 ──────────────────────────────────────────
-_ENTITY_TYPE_PATTERNS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"我|my|i\b"), "user"),
-    (re.compile(r"你|you\b"), "agent"),
-    (re.compile(r"公司|团队|组织|company|team|org"), "org"),
-    (re.compile(r"服务器|主机|server|host"), "host"),
-    (re.compile(r"项目|仓库|project|repo"), "project"),
-    (re.compile(r"文件|文档|file|doc"), "file"),
-]
-
-
-@dataclass
-class WriteDecisionResult:
-    """write_decision() 的返回结果。"""
-
-    should_store: bool
-    score: float
-    candidates: list[dict[str, Any]] = field(default_factory=list)
-    layer1_rule_hit: bool = False
-    layer2_novelty_pass: bool = False
-    layer3_score_detail: Optional[ImportanceScore] = None
-    entity_key: Optional[str] = None
-    triple_result: Optional[TripleExtractResult] = None
 
 
 class MemoryUpdater:
@@ -103,6 +61,11 @@ class MemoryUpdater:
         importance_scorer: Optional[ImportanceScorer] = None,
         triple_extractor: Optional[TripleExtractor] = None,
         concept_worker: Optional["BackgroundConceptWorker"] = None,
+        # ── Phase 2 新增依赖 ──
+        knowledge_queue: Optional[Any] = None,
+        # ── Phase 3 解耦注入 ──
+        decision: Optional[WriteDecision] = None,
+        router: Optional[MemoryRouter] = None,
     ):
         self.wm = working_memory
         self.stm = short_term_memory
@@ -114,6 +77,17 @@ class MemoryUpdater:
         self._importance = importance_scorer or ImportanceScorer()
         self._triple_extractor = triple_extractor or TripleExtractor()
         self._concept_worker = concept_worker
+
+        # Phase 2 新增
+        self._knowledge_queue = knowledge_queue
+
+        # Phase 3 解耦注入（创建默认实例保持向后兼容）
+        self._decision = decision or WriteDecision(ltm=long_term_memory, scorer=self._importance)
+        self._router = router or MemoryRouter(
+            triple_extractor=self._triple_extractor,
+            knowledge_queue=knowledge_queue,
+            concept_worker=concept_worker,
+        )
 
         # 状态追踪
         self._turn_count: int = 0
@@ -164,14 +138,14 @@ class MemoryUpdater:
         user_id: str,
     ) -> None:
         """Phase 3 持久层写入：候选缓冲 + 批量触发 + 统一决策 + 分流。"""
-        # 组合候选文本
         candidate_text = self._build_candidate_text(task, response, metrics)
 
-        # Layer 1 立即判断
-        layer1_result = self._layer1_rule_check(candidate_text, task, response, metrics)
+        # Layer 1: 委托给 WriteDecision
+        layer1_result = self._decision._layer1_rule_check(
+            candidate_text, task, response, metrics,
+        )
 
         if layer1_result.should_store:
-            # Layer 1 命中 → 立即通过，跳过 Layer 2/3
             logger.info(
                 "Layer 1 rule hit: should_store=True, score=%.3f, entity_key=%s",
                 layer1_result.score, layer1_result.entity_key,
@@ -181,7 +155,7 @@ class MemoryUpdater:
             )
             return
 
-        # Layer 1 未命中 → 推入候选缓冲区，检查批量触发条件
+        # Layer 1 未命中 → 推入候选缓冲区
         pending_id = await self.stm.add_pending_candidate(
             content=candidate_text,
             entities={
@@ -220,11 +194,11 @@ class MemoryUpdater:
             # 标记为 processing
             await self.stm.update_pending_status(record["id"], "processing")
 
-            # Layer 2 + Layer 3 判断
-            result = await self.write_decision(content, user_id=user_id)
+            # Layer 2 + Layer 3 判断（委托给 WriteDecision）
+            result = await self._decision.decide(content, user_id=user_id)
 
             if result.should_store:
-                await self._dispatch_to_stores_from_content(
+                await self._dispatch_to_stores_from_content_new(
                     content, result, user_id,
                 )
                 await self.stm.update_pending_status(record["id"], "written")
@@ -520,8 +494,9 @@ class MemoryUpdater:
         """
         route = {"knowledge": False, "experience": False, "long_term": True}
 
-        # 1. Knowledge 信号
-        triple_result = self._triple_extractor.extract(content)
+        # 1. Knowledge 信号 — 只从用户输入提取三元组（避免 LLM 回复文本碎片污染）
+        extract_text = self._extract_user_input_from_content(content, task)
+        triple_result = self._triple_extractor.extract(extract_text)
         result.triple_result = triple_result
 
         if triple_result.should_store_knowledge:
@@ -594,7 +569,38 @@ class MemoryUpdater:
     ) -> None:
         """Layer 1 命中时的立即分发（跳过候选缓冲）。"""
         content = self._build_candidate_text(task, response, metrics)
-        await self._dispatch_to_stores_from_content(content, result, user_id)
+        await self._dispatch_to_stores_from_content_new(content, result, user_id)
+
+    # ── 新分流方法（Phase 3: 委托给 MemoryRouter）──────────────
+
+    async def _dispatch_to_stores_from_content_new(
+        self,
+        content: str,
+        result: WriteDecisionResult,
+        user_id: str,
+    ) -> None:
+        """按分流结果写入各持久层（委托给 MemoryRouter）。"""
+        # 路由判断
+        route_result, triple_result = await self._router.route(
+            content=content,
+            journal_id="",  # Phase 3 暂不传 journal_id
+            user_id=user_id,
+        )
+
+        # 执行分发
+        await self._router.dispatch(
+            route_result=route_result,
+            triple_result=triple_result,
+            content=content,
+            journal_id="",
+            user_id=user_id,
+            ltm=self.ltm,
+            sem=self.sem,
+            exp=self.exp,
+            score=result.score,
+        )
+
+    # ── 旧分流方法（保持向后兼容）──────────────────────────────
 
     async def _dispatch_to_stores_from_content(
         self,
@@ -658,7 +664,15 @@ class MemoryUpdater:
                 metadata=metadata,
                 user_id=user_id,
             )
-            if self._concept_worker:
+            # Phase 2: 改为通过 KnowledgeQueue 异步处理（替代直接 signal）
+            if self._knowledge_queue:
+                await self._knowledge_queue.enqueue(
+                    content=content,
+                    user_id=user_id,
+                    source="channel_b",
+                )
+            elif self._concept_worker:
+                # 旧路径兼容（Phase 4 后废弃）
                 self._concept_worker.signal()
             return
 
@@ -798,6 +812,38 @@ class MemoryUpdater:
         """构建候选内容文本（用于写入选评估）。"""
         return f"User: {task.raw_input}\nAssistant: {response[:500]}"
 
+    @staticmethod
+    def _extract_user_input_from_content(content: str, task: Optional[TaskSpec] = None) -> str:
+        """从候选内容文本中提取用户输入部分，用于三元组抽取。
+
+        content 格式为 "User: {raw_input}\\nAssistant: {response[:500]}"。
+        三元组抽取只需要用户输入的结构化事实数据，
+        不需要 LLM 的自然语言回复（避免文本碎片污染概念图）。
+
+        Args:
+            content: 候选内容文本（User: ...\\nAssistant: ... 格式）。
+            task: 原始任务（优先使用 task.raw_input）。
+
+        Returns:
+            用户输入文本。
+        """
+        # 优先使用 task.raw_input（更准确，无前缀干扰）
+        if task and task.raw_input:
+            return task.raw_input
+
+        # 后备：从 combined content 中剥离 assistant 部分
+        assistant_idx = content.find("\nAssistant:")
+        if assistant_idx >= 0:
+            user_part = content[:assistant_idx]
+        else:
+            user_part = content
+
+        # 移除 "User: " 前缀（如果存在）
+        if user_part.startswith("User: "):
+            user_part = user_part[6:]
+
+        return user_part.strip()
+
     def _extract_kv_pairs(self, text: str) -> dict[str, str]:
         """从文本中提取 KV 键值对（Layer 1 使用）。"""
         result: dict[str, str] = {}
@@ -886,6 +932,45 @@ class MemoryUpdater:
             task_name=f"{task.intent.value}: {task.raw_input[:50]}",
             result=response[:200],
             user_id=user_id,
+        )
+
+    # ── 向后兼容 wrapper（Phase 3: 委托给 WriteDecision / MemoryRouter）──
+
+    def _normalize_entity_key(self, text: str) -> Optional[str]:
+        """向后兼容：委托给 WriteDecision._normalize_entity_key。"""
+        return self._decision._normalize_entity_key(text)
+
+    def _extract_kv_pairs(self, text: str) -> dict[str, str]:
+        """向后兼容：委托给 WriteDecision._extract_kv_pairs。"""
+        return self._decision._extract_kv_pairs(text)
+
+    def _layer1_rule_check(
+        self,
+        content: str,
+        task: Optional[TaskSpec],
+        response: str,
+        metrics: EvalMetrics,
+    ) -> WriteDecisionResult:
+        """向后兼容：委托给 WriteDecision._layer1_rule_check。"""
+        return self._decision._layer1_rule_check(content, task, response, metrics)
+
+    async def write_decision(
+        self,
+        content: str,
+        *,
+        task: Optional[TaskSpec] = None,
+        response: str = "",
+        metrics: Optional[EvalMetrics] = None,
+        user_id: str = "anonymous",
+    ) -> WriteDecisionResult:
+        """向后兼容：委托给 WriteDecision.decide。"""
+        return await self._decision.decide(
+            content=content,
+            user_id=user_id,
+            task_intent=task.intent.value if task else "",
+            task=task,
+            response=response,
+            metrics=metrics or EvalMetrics(),
         )
 
     # ── 用户反馈 ───────────────────────────────────────────────

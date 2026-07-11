@@ -434,6 +434,129 @@ class LongTermMemory:
 
         return len(to_delete)
 
+    # ── Summary（Phase 5: 非结构化摘要存储）───────────────
+
+    async def save_summary(
+        self,
+        content: str,
+        category: str = "summary",
+        confidence: float = 0.7,
+        source: str = "write_decision",
+        user_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """保存一条无 entity_key 的非结构化 Summary。
+
+        不同于 save_fact: 不按 entity_key 覆盖，不做版本链。
+        去重基于 embedding 相似度:
+            sim > 0.9 → 内容对比 → 有新增信息则合并加速旧条目的 decay
+            sim < 0.9 → 新增
+
+        Args:
+            content: 摘要内容。
+            category: 类别（默认 "summary"）。
+            confidence: 置信度。
+            source: 来源。
+            user_id: 用户 ID。
+
+        Returns:
+            记忆 ID（跳过去重时返回 None）。
+        """
+        uid = user_id or self.user_id
+        import json
+        import uuid as _uuid
+        from datetime import datetime, timezone
+
+        # 1. embedding 去重
+        if self._embedding_provider is not None:
+            try:
+                query_emb = await self._embedding_provider.embed(content)
+                existing = await self.store.query_memories(
+                    type="long_term", user_id=uid, top_k=50,
+                )
+
+                # 找到与 metadata.ltm_subtype="summary" 的最相似条目
+                max_sim = 0.0
+                best_match = None
+                for r in existing:
+                    meta = r.get("metadata", {}) or {}
+                    if meta.get("ltm_subtype") != "summary":
+                        continue
+                    stored_emb = r.get("embedding")
+                    if not stored_emb:
+                        continue
+                    if isinstance(stored_emb, str):
+                        try:
+                            stored_emb = json.loads(stored_emb)
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+                    if len(stored_emb) != len(query_emb):
+                        continue
+                    sim = self._cosine_similarity(query_emb, stored_emb)
+                    if sim > max_sim:
+                        max_sim = sim
+                        best_match = r
+
+                if max_sim > 0.9 and best_match is not None:
+                    # 内容对比
+                    existing_content = best_match.get("content", "")
+                    if self._has_new_info(content, existing_content):
+                        # 合并：新内容存储，旧条目加速 decay
+                        await self.store.execute(
+                            "UPDATE memories SET relevance_score = MAX(0, relevance_score - 0.3) "
+                            "WHERE id = ?",
+                            [best_match["id"]],
+                        )
+                        logger.debug(
+                            "Summary merge: new info detected, old entry %s decayed",
+                            best_match["id"],
+                        )
+                    else:
+                        logger.debug("Summary dedup: sim=%.3f, truly duplicate", max_sim)
+                        return None
+
+            except Exception as e:
+                logger.warning("Summary dedup failed, storing: %s", e)
+
+        # 2. 存储
+        mem_id = _uuid.uuid4().hex
+        now = datetime.now(timezone.utc).isoformat()
+
+        # 自动生成 embedding
+        embedding = None
+        if self._embedding_provider is not None:
+            try:
+                embedding = await self._embedding_provider.embed(content)
+            except Exception:
+                pass
+
+        await self.store.save_memory(
+            id=mem_id,
+            type="long_term",
+            content=content,
+            user_id=uid,
+            embedding=embedding,
+            metadata={
+                "category": category,
+                "ltm_subtype": "summary",
+                "confidence": confidence,
+                "source": source,
+                "created_at": now,
+            },
+        )
+        logger.info(
+            "LTM Summary saved: id=%s, category=%s, len=%d",
+            mem_id, category, len(content),
+        )
+        return mem_id
+
+    @staticmethod
+    def _has_new_info(new_text: str, old_text: str) -> bool:
+        """简单的文本差异检测：新文本是否有旧文本没有的句子。"""
+        new_sentences = set(s.strip() for s in re.split(r"[。；.!?;]", new_text) if s.strip())
+        old_sentences = set(s.strip() for s in re.split(r"[。；.!?;]", old_text) if s.strip())
+        new_only = new_sentences - old_sentences
+        return len(new_only) > 0
+
     # ── Fact（原 FactMemory，已合并到 metadata） ──────────────
 
     async def save_fact(
@@ -594,6 +717,76 @@ class LongTermMemory:
         # 按时间倒序
         facts.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return facts
+
+    # ── 衰减 ────────────────────────────────────────────────────
+
+    async def decay_relevance(self, half_life_days: float = 7.0) -> int:
+        """衰减所有 LTM 记忆的 relevance_score（时间衰减）。
+
+        Summary 使用 3 天半衰期，Fact 使用 7 天半衰期。
+
+        Args:
+            half_life_days: 默认半衰期（天）。Summary 会使用更快的 3 天。
+
+        Returns:
+            更新的记忆数。
+        """
+        import json
+        from datetime import datetime, timezone
+
+        if not self.store.is_connected:
+            return 0
+
+        results = await self.store.query_memories(
+            type="long_term", user_id=self.user_id, top_k=5000,
+        )
+        if not results:
+            return 0
+
+        now = datetime.now(timezone.utc)
+        fact_lambda = math.log(2) / half_life_days
+        summary_lambda = math.log(2) / 3.0  # Summary 固定 3 天半衰期
+        updated = 0
+
+        for r in results:
+            ts_str = r.get("timestamp")
+            if not ts_str:
+                continue
+
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                days_old = max(0, (now - ts).days)
+            except Exception:
+                continue
+
+            meta = r.get("metadata", {})
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except (json.JSONDecodeError, TypeError):
+                    meta = {}
+
+            is_summary = isinstance(meta, dict) and meta.get("ltm_subtype") == "summary"
+            decay_lambda = summary_lambda if is_summary else fact_lambda
+
+            decay_factor = math.exp(-decay_lambda * days_old)
+            current_score = r.get("relevance_score") or 0.0
+            new_score = round(current_score * decay_factor, 4)
+            new_score = max(new_score, 0.01)
+
+            if abs(new_score - current_score) > 0.001:
+                await self.store.execute(
+                    "UPDATE memories SET relevance_score = ? WHERE id = ?",
+                    [new_score, r["id"]],
+                )
+                updated += 1
+
+        if updated > 0:
+            logger.info(
+                "LTM decay_relevance: %d memories updated (fact_hl=%.1fd, summary_hl=3.0d)",
+                updated, half_life_days,
+            )
+        return updated
 
     # ── 清理 ────────────────────────────────────────────────────
 

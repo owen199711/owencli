@@ -33,6 +33,36 @@ from context_os.feedback.triple_extractor import _is_valid_concept
 
 logger = get_logger(__name__)
 
+# ── 通道 B 特有质量检查 ──────────────────────────────────────
+
+# 带圈数字字符（① U+2460 ~ ⑳ U+2473）
+_CIRCLED_DIGIT_RANGE = range(0x2460, 0x2474)
+
+def _is_quality_concept(name: str) -> bool:
+    """通道 B 额外质量检查。
+
+    在 _is_valid_concept 基础上增加 LLM 抽取特有的过滤：
+        - 拒绝纯数字（无单位，失去上下文的数值无意义）
+        - 拒绝含带圈数字序号的概念（如 "规则①"）
+        - 拒绝以数字编号开头的碎片（如 "4. Alpha"）
+
+    Args:
+        name: 概念名称。
+
+    Returns:
+        是否通过质量检查。
+    """
+    stripped = name.strip()
+    if not stripped:
+        return False
+    # 纯数字（无单位）
+    if stripped.isdigit():
+        return False
+    # 含带圈数字序号（U+2460-U+2473: ①-⑳）
+    if any(ord(c) in _CIRCLED_DIGIT_RANGE for c in stripped):
+        return False
+    return True
+
 # 常量
 DEBOUNCE_SECONDS = 120       # 2 分钟 debounce
 FALLBACK_SECONDS = 900       # 15 分钟兜底
@@ -367,6 +397,9 @@ class BackgroundConceptWorker:
             try:
                 # 质量过滤：跳过无效概念
                 if not _is_valid_concept(subject, min_len=3) or not _is_valid_concept(obj, min_len=3):
+                    continue
+                # 通道 B 特有质量检查（纯数字 / 带圈序号等）
+                if not _is_quality_concept(subject) or not _is_quality_concept(obj):
                     continue
                 if subject == obj:
                     continue

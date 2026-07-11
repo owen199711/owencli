@@ -22,10 +22,20 @@ from context_os.core.models import (
     TaskSpec,
     UnifiedContext,
 )
+from context_os.events.bus import EventBus
 from context_os.feedback.concept_worker import BackgroundConceptWorker
 from context_os.feedback.evaluator import QualityEvaluator
 from context_os.feedback.memory_updater import MemoryUpdater
 from context_os.feedback.tracer import Tracer
+from context_os.feedback.triple_extractor import TripleExtractor
+from context_os.knowledge import KnowledgeQueue, KnowledgeUpdater
+from context_os.maintenance import MaintenanceWorker
+from context_os.memory.journal import JournalStore
+from context_os.retriever import (
+    UnifiedRetriever, ScoringEngine,
+    LTMAdapter, ExperienceAdapter, KnowledgeAdapter,
+    SessionAdapter, JournalAdapter,
+)
 from context_os.intent.classifier import IntentClassifier
 from context_os.intent.extractor import EntityExtractor
 from context_os.intent.parser import TaskParser
@@ -84,6 +94,13 @@ class ContextOSPipeline:
         self.store = SQLiteStore(db_path=db_path)
         self._store_connected = False
 
+        # ── Event Bus（Phase 1）──
+        self.event_bus = EventBus()
+
+        # ── Journal（Phase 2）──
+        self.journal = JournalStore(store=self.store, event_bus=self.event_bus)
+        self._round_count: int = 0
+
         # ── Intent ──
         classifier = IntentClassifier(llm_client=llm_client)
         extractor = EntityExtractor()
@@ -118,6 +135,20 @@ class ContextOSPipeline:
             user_id=user_id,
         )
 
+        # ── Retriever (Phase 6) ──
+        scoring = ScoringEngine()
+        self.retriever = UnifiedRetriever(
+            adapters={
+                "long_term": LTMAdapter(self.long_term_memory),
+                "experience": ExperienceAdapter(self.experience_memory),
+                "knowledge": KnowledgeAdapter(self.semantic_memory),
+                "session": SessionAdapter(self.short_term_memory),
+                "journal": JournalAdapter(self.journal),
+            },
+            scoring=scoring,
+            default_top_k=25,
+        )
+
         # ── Builder ──
         self.builder = ContextBuilder(
             selector=selector,
@@ -131,6 +162,8 @@ class ContextOSPipeline:
             session_memory=self.short_term_memory,
             experience_memory=self.experience_memory,
             semantic_memory=self.semantic_memory,
+            # Phase 6: 统一检索
+            retriever=self.retriever,
         )
 
         # ── Optimizer ──
@@ -146,11 +179,24 @@ class ContextOSPipeline:
         # ── Packager ──
         self.packager = ContextPackager()
 
-        # ── Background Concept Worker（Phase 3.5b）─
+        # ── Knowledge Queue（Phase 4）─
+        self.knowledge_queue = KnowledgeQueue(store=self.store)
+
+        # ── Background Concept Worker（Phase 3.5b，Phase 4 后为旧路径）─
         self.concept_worker = BackgroundConceptWorker(
             ltm=self.long_term_memory,
             knowledge=self.semantic_memory,
             llm_client=llm_client,
+        )
+
+        # ── Knowledge Updater（Phase 4: 替换 concept_worker.LTM 扫描模式）─
+        triple_extractor = TripleExtractor()
+        self.knowledge_updater = KnowledgeUpdater(
+            knowledge_queue=self.knowledge_queue,
+            triple_extractor=triple_extractor,
+            llm_client=llm_client,
+            semantic_memory=self.semantic_memory,
+            event_bus=self.event_bus,
         )
 
         # ── Feedback ──
@@ -163,18 +209,46 @@ class ContextOSPipeline:
             semantic_memory=self.semantic_memory,
             experience_memory=self.experience_memory,
             concept_worker=self.concept_worker,
+            knowledge_queue=self.knowledge_queue,
         )
 
         # ── LLM ──
         self.llm_client = llm_client
 
-        # ── Start background worker ──
+        # ── Start background workers ──
         self.concept_worker.start()
+        self.knowledge_updater.start()
+
+        # ── Maintenance Worker（Phase 7）──
+        self.maintenance = MaintenanceWorker(
+            ltm=self.long_term_memory,
+            store=self.store,
+            experience=self.experience_memory,
+            event_bus=self.event_bus,
+        )
+        self.maintenance.start()
 
         logger.info(
             "ContextOSPipeline initialized: session=%s, user=%s, provider=%s",
             self.session_id, user_id, provider.value,
         )
+
+    # ── 向后兼容属性（Phase 8）──────────────────────────────
+
+    @property
+    def session_memory(self) -> SessionMemory:
+        """session_memory 别名（Phase 8: short_term_memory 的推荐名称）。"""
+        return self.short_term_memory
+
+    @property
+    def episodic_memory(self) -> ExperienceMemory:
+        """episodic_memory 别名（已废弃，请使用 experience_memory）。"""
+        import warnings
+        warnings.warn(
+            "episodic_memory is deprecated, use experience_memory instead",
+            DeprecationWarning, stacklevel=2,
+        )
+        return self.experience_memory
 
     async def _ensure_store(self) -> None:
         """确保 SQLite 已连接（懒连接）。"""
@@ -315,6 +389,18 @@ class ContextOSPipeline:
                 user_id=self.user_id,
             )
 
+            # Phase 2: 写入 Journal（预写日志）
+            self._round_count += 1
+            await self.journal.append(
+                user_id=self.user_id,
+                session_id=self.session_id,
+                round_id=self._round_count,
+                raw_input=task.raw_input,
+                raw_output=str(llm_response)[:2000],
+                entities={e.name: e.value for e in task.entities} if task.entities else {},
+                task_intent=task.intent.value,
+            )
+
             self.tracer.finish(success=metrics.success)
 
             total_latency = (time.time() - pipeline_start) * 1000
@@ -368,8 +454,12 @@ class ContextOSPipeline:
             logger.info("Flushing %d pending candidates on close", pending_count)
             await self.memory_updater._flush_candidate_buffer(self.user_id)
 
-        # 停止后台 ConceptWorker
+        # 停止后台 KnowledgeUpdater（Phase 4）和 ConceptWorker
+        await self.knowledge_updater.stop()
         await self.concept_worker.stop()
+
+        # 停止 MaintenanceWorker（Phase 7）
+        await self.maintenance.stop()
 
         # 关闭数据库
         await self.store.close()

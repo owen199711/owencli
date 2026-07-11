@@ -2,7 +2,7 @@
 
 编排 ContextSelector/ContextRouter/Collector/Memory，生成 UnifiedContext。
 
-Phase 4.4: 多源联合检索 — 从 4 个来源并行检索并合并。
+Phase 6: 使用 UnifiedRetriever 替代手动多源检索。
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from context_os.collection.environment import EnvironmentCollector
 from context_os.collection.identity import IdentityCollector
 from context_os.core.logger import get_logger
 from context_os.core.models import (
-    KnowledgeChunk, MemoryItem, TaskSpec, UnifiedContext,
+    KnowledgeChunk, MemoryItem, MemoryType, TaskSpec, UnifiedContext,
 )
 from context_os.memory.long_term import LongTermMemory
 from context_os.memory.working import WorkingMemory
@@ -28,15 +28,17 @@ if TYPE_CHECKING:
     from context_os.memory.experience import ExperienceMemory
     from context_os.memory.semantic import SemanticMemory
     from context_os.memory.session_memory import SessionMemory
+    from context_os.retriever.retriever import UnifiedRetriever
 
 logger = get_logger(__name__)
 
 # ════════════════════════════════════════════════════════════════
-# Phase 4.4 新旧策略开关
+# Phase 6 新旧策略开关
 # ════════════════════════════════════════════════════════════════
 USE_NEW_BUILDER = True
+USE_RETRIEVER = True   # Phase 6: 使用 UnifiedRetriever
 
-# 多源权重（遍历阶段五可拔出到配置）
+# 多源权重（Phase 6 后废弃，由 SourceAdapter 管理）
 _SOURCE_WEIGHTS = {
     "long_term": 1.0,
     "session_pending": 0.8,
@@ -73,6 +75,8 @@ class ContextBuilder:
         session_memory: Optional["SessionMemory"] = None,
         experience_memory: Optional["ExperienceMemory"] = None,
         semantic_memory: Optional["SemanticMemory"] = None,
+        # ── Phase 6 新增 ──
+        retriever: Optional["UnifiedRetriever"] = None,
     ):
         self.selector = selector
         self.router = router
@@ -88,10 +92,13 @@ class ContextBuilder:
         self.experience_memory = experience_memory
         self.semantic_memory = semantic_memory
 
+        # Phase 6 新增
+        self.retriever = retriever
+
         logger.info(
-            "ContextBuilder initialized (new_builder=%s, has_session=%s, "
-            "has_experience=%s, has_semantic=%s)",
-            USE_NEW_BUILDER,
+            "ContextBuilder initialized (new_builder=%s, use_retriever=%s, "
+            "has_session=%s, has_experience=%s, has_semantic=%s)",
+            USE_NEW_BUILDER, USE_RETRIEVER and retriever is not None,
             session_memory is not None,
             experience_memory is not None,
             semantic_memory is not None,
@@ -101,10 +108,106 @@ class ContextBuilder:
         """构建完整的 UnifiedContext。"""
         logger.info("Building context for task: %s (intent=%s)", task.id, task.intent.value)
 
+        # Phase 6: Retriever 路线优先
+        if USE_RETRIEVER and self.retriever is not None:
+            return await self._build_with_retriever(task)
+
         if USE_NEW_BUILDER:
             return await self._build_new(task)
         else:
             return await self._build_old(task)
+
+    # ════════════════════════════════════════════════════════════
+    # Phase 6: Retriever 路线
+    # ════════════════════════════════════════════════════════════
+
+    async def _build_with_retriever(self, task: TaskSpec) -> UnifiedContext:
+        """使用 UnifiedRetriever 构建上下文（Phase 6）。"""
+        try:
+            flags = self.selector.select(task)
+            routes = self.router.route(task, flags)
+            ctx = UnifiedContext()
+
+            # 1. 收集器（identity, conversation, environment）
+            collector_map = {
+                ContextFlag.IDENTITY: self.identity,
+                ContextFlag.CONVERSATION: self.conversation,
+                ContextFlag.ENVIRONMENT: self.environment,
+            }
+            active_routes = [r for r in routes if r.flag in collector_map]
+            collect_tasks = [collector_map[r.flag].collect() for r in active_routes]
+
+            # 2. 统一检索
+            if ContextFlag.MEMORY in flags:
+                retrieve_task = asyncio.create_task(
+                    self.retriever.retrieve(
+                        task.raw_input, top_k=25, intent=task.intent.value,
+                    )
+                )
+                collect_tasks.append(retrieve_task)
+            else:
+                retrieve_task = None
+
+            if collect_tasks:
+                results = await asyncio.gather(*collect_tasks, return_exceptions=True)
+
+                # 处理 collector 结果
+                for idx, route in enumerate(active_routes):
+                    if idx >= len(results):
+                        break
+                    result = results[idx]
+                    if isinstance(result, Exception):
+                        logger.warning("Collector %s failed: %s", type(collector_map[route.flag]).__name__, result)
+                        continue
+                    if route.flag == ContextFlag.IDENTITY and result:
+                        ctx.identity = result
+                    elif route.flag == ContextFlag.CONVERSATION and result:
+                        ctx.conversation = result
+                    elif route.flag == ContextFlag.ENVIRONMENT and result:
+                        ctx.environment = result
+
+                # 处理检索结果
+                if retrieve_task:
+                    result_idx = len(active_routes)
+                    retrieved = results[result_idx] if result_idx < len(results) else []
+                    if isinstance(retrieved, list):
+                        mem_list: list[MemoryItem] = []
+                        kw_list: list[KnowledgeChunk] = []
+                        for item in retrieved:
+                            if item.source == "knowledge":
+                                kw_list.append(KnowledgeChunk(
+                                    source="knowledge_graph",
+                                    content=item.content,
+                                    score=item.score,
+                                ))
+                            else:
+                                mem_list.append(MemoryItem(
+                                    id=item.metadata.get("id", ""),
+                                    type=MemoryType(item.source) if hasattr(MemoryType, item.source) else MemoryType.LONG_TERM,
+                                    content=item.content,
+                                    metadata=item.metadata,
+                                    relevance_score=item.score,
+                                ))
+                        ctx.memory = mem_list
+                        ctx.knowledge = kw_list
+                        logger.debug(
+                            "Retriever: %d memory + %d knowledge items",
+                            len(mem_list), len(kw_list),
+                        )
+
+            # 3. 归一化 + 去重
+            ctx = self.merger.normalize(ctx)
+            ctx = self.merger.deduplicate(ctx)
+
+            logger.info(
+                "Context built (retriever): memory=%d, knowledge=%d, tools=%d",
+                len(ctx.memory), len(ctx.knowledge), len(ctx.tools),
+            )
+            return ctx
+
+        except Exception as e:
+            logger.error("Context build failed: %s", e, exc_info=True)
+            raise ContextBuildError(f"Failed to build context: {e}") from e
 
     # ════════════════════════════════════════════════════════════
     # 新流程（Phase 4.4）

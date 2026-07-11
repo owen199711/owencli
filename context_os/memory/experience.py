@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from context_os.core.logger import get_logger
 from context_os.memory.store import SQLiteStore
+from context_os.memory.tags import validate_tags
 
 logger = get_logger(__name__)
 
@@ -73,6 +74,45 @@ class ExperienceMemory:
         )
         logger.debug("%s saved: id=%s", experience_type, exp_id)
         return exp_id
+
+    async def record(
+        self,
+        tags: list[str],
+        metadata: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> str:
+        """多标签记录（Phase 4）。
+
+        根据 tags 自动推断 experience_type（取第一个核心标签），
+        所有标签经过规范化后存储。
+
+        Args:
+            tags: 标签列表（支持多标签，如 ["reflection", "tool_usage"]）。
+            metadata: 附加元数据。
+            **kwargs: 各子类型特有字段。
+
+        Returns:
+            记录 ID。
+        """
+        normalized = validate_tags(tags)
+        if not normalized:
+            return ""
+
+        # 确定主类型：优先使用核心标签
+        exp_type = "episode"  # 默认
+        core_order = ("reflection", "tool_usage", "procedure", "episode")
+        for ct in core_order:
+            if ct in normalized:
+                exp_type = ct
+                break
+
+        return await self.store.save_experience(
+            experience_type=exp_type,
+            user_id=kwargs.pop("user_id", self.user_id),
+            tags=normalized,
+            metadata=metadata,
+            **kwargs,
+        )
 
     # ── 子类型便捷方法 ─────────────────────────────────────────
 
